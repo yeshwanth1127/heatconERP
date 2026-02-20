@@ -1,0 +1,25 @@
+/* Heatcon ERP Industrial Theme */
+:root {
+    --primary: #195de6;
+    --background-light: #f6f6f8;
+    --background-dark: #111621;
+    --steel: #243047;
+    --border-gray: #344465;
+}
+
+body.industrial { font-family: 'Public Sans', sans-serif; }
+
+.industrial-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.industrial-scrollbar::-webkit-scrollbar-track { background: #111621; }
+.industrial-scrollbar::-webkit-scrollbar-thumb { background: #344465; }
+.industrial-scrollbar::-webkit-scrollbar-thumb:hover { background: #195de6; }
+
+.grid-bg {
+    background-image: radial-gradient(#195de622 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.grid-row-selected {
+    background-color: rgba(25, 93, 230, 0.15);
+    border-left: 3px solid #195de6;
+}

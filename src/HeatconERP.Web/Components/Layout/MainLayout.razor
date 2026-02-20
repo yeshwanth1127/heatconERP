@@ -1,0 +1,109 @@
+@inherits LayoutComponentBase
+@using HeatconERP.Web.Services
+@inject AuthService Auth
+@implements IDisposable
+
+@if (Auth.IsInitializing)
+{
+    <div class="flex h-screen w-full items-center justify-center bg-[#111621]">
+        <div class="flex flex-col items-center gap-4 text-slate-400">
+            <span class="material-symbols-outlined animate-pulse text-4xl text-[#195de6]">hourglass_empty</span>
+            <span class="text-sm font-medium uppercase tracking-wider">Loading session...</span>
+        </div>
+    </div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <Login />
+}
+else
+{
+    <div class="flex h-screen w-full">
+        <aside class="w-64 flex-shrink-0 bg-[#111621] border-r border-[#344465] flex flex-col z-20">
+            <NavMenu />
+        </aside>
+        <main class="flex-1 flex flex-col min-w-0 bg-[#111621] grid-bg">
+            <header class="h-14 flex items-center justify-between border-b border-[#344465] px-6 bg-[#111621]/80 backdrop-blur-md">
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center gap-2">
+                        <div class="size-2 bg-emerald-500 animate-pulse"></div>
+                        <span class="text-xs font-bold uppercase text-emerald-500 tracking-wider">System Status: Nominal</span>
+                    </div>
+                    <div class="h-4 w-px bg-[#344465]"></div>
+                    <div class="flex items-center gap-2 text-slate-400">
+                        <span class="material-symbols-outlined text-lg">calendar_today</span>
+                        <span class="text-xs font-medium uppercase tracking-tighter">@DateTime.Now.ToString("MMMM d, yyyy - HH:mm:ss")</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button type="button" class="p-2 text-slate-400 hover:text-[#195de6] transition-colors relative">
+                        <span class="material-symbols-outlined">notifications</span>
+                        <span class="absolute top-2 right-2 size-1.5 bg-[#195de6] border border-[#111621]"></span>
+                    </button>
+                    <div class="h-8 w-px bg-[#344465]"></div>
+                    <div class="flex items-center gap-3 pl-2">
+                        <div class="flex flex-col items-end">
+                            <span class="text-xs font-bold text-slate-100 leading-none">@GetUserInitials()</span>
+                            <span class="text-[10px] text-slate-400 leading-none mt-1 uppercase tracking-tighter font-medium">@Auth.CurrentUser?.Role</span>
+                        </div>
+                        <div class="size-9 bg-[#243047] border border-[#344465] flex items-center justify-center text-[#195de6] font-bold text-sm">
+                            @GetUserInitials()
+                        </div>
+                    </div>
+                    <button type="button" class="text-xs text-slate-400 hover:text-rose-400 uppercase font-bold" @onclick="Logout">Logout</button>
+                </div>
+            </header>
+            <div class="flex-1 overflow-y-auto industrial-scrollbar p-6">
+                @Body
+            </div>
+            <footer class="h-8 border-t border-[#344465] bg-[#111621] flex items-center justify-between px-4">
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-1.5 text-emerald-500">
+                        <span class="material-symbols-outlined text-[14px]">cloud_done</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest leading-none">DB Connected</span>
+                    </div>
+                    <div class="w-px h-4 bg-[#344465]"></div>
+                    <span class="text-[10px] font-medium text-slate-500 uppercase tracking-widest leading-none">Heatcon ERP v1.0</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-[10px] font-medium text-slate-500 uppercase tracking-widest leading-none">Heatcon Aerocomponents Division</span>
+                    <div class="flex items-center gap-1 text-[#195de6]">
+                        <span class="material-symbols-outlined text-[14px]">bolt</span>
+                        <span class="text-[10px] font-bold uppercase tracking-widest">High Intensity Mode</span>
+                    </div>
+                </div>
+            </footer>
+        </main>
+    </div>
+}
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnAuthStateChanged += StateHasChanged;
+        await Auth.RestoreSessionAsync();
+    }
+
+    public void Dispose()
+    {
+        Auth.OnAuthStateChanged -= StateHasChanged;
+    }
+
+    private void Logout()
+    {
+        Auth.Logout();
+    }
+
+    private string GetUserInitials()
+    {
+        var u = Auth.CurrentUser?.Username ?? "";
+        if (u.Length >= 2) return u[..2].ToUpperInvariant();
+        return u.ToUpperInvariant();
+    }
+}

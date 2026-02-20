@@ -1,0 +1,12 @@
+@page "/"
+@using HeatconERP.Web.Services
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (Auth.IsLoggedIn)
+            Nav.NavigateTo("/dashboard", replace: true);
+    }
+}

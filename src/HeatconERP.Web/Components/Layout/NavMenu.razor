@@ -1,0 +1,91 @@
+@using HeatconERP.Web.Services
+@inject AuthService Auth
+
+<div class="p-4 border-b border-[#344465] flex items-center gap-3 bg-[#243047]/30">
+    <div class="w-8 h-8 bg-[#195de6] flex items-center justify-center text-white">
+        <span class="material-symbols-outlined text-xl">precision_manufacturing</span>
+    </div>
+    <div class="flex flex-col">
+        <span class="text-sm font-bold tracking-wider text-white uppercase">Heatcon ERP</span>
+        <span class="text-[10px] text-slate-400 font-medium">INDUSTRIAL v1.0</span>
+    </div>
+</div>
+<nav class="flex-1 overflow-y-auto industrial-scrollbar py-2">
+    <div class="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Main Modules</div>
+    @foreach (var item in GetNavItems())
+    {
+        @if (item.SubItems?.Any() == true)
+        {
+            <div class="py-1">
+                <NavLink class="flex items-center gap-3 px-4 py-2 text-slate-400 hover:bg-[#243047]/50 transition-colors" href="@item.Href" ActiveClass="bg-[#195de6] text-white border-l-2 border-[#195de6]">
+                    <span class="material-symbols-outlined text-[20px]">@item.Icon</span>
+                    <span class="text-xs font-medium uppercase tracking-tighter">@item.Label</span>
+                </NavLink>
+                <div class="pl-6 border-l-2 border-[#344465]/50 ml-5 my-1">
+                    @foreach (var sub in item.SubItems)
+                    {
+                        <NavLink class="flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-500 hover:text-slate-200 hover:bg-[#243047]/30 transition-colors" href="@sub.Href" ActiveClass="text-[#195de6] font-semibold">
+                            <span class="material-symbols-outlined text-[16px]">@sub.Icon</span>
+                            @sub.Label
+                        </NavLink>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <NavLink class="flex items-center gap-3 px-4 py-2 text-slate-400 hover:bg-[#243047]/50 transition-colors" href="@item.Href" ActiveClass="bg-[#195de6] text-white border-l-2 border-[#195de6]">
+                <span class="material-symbols-outlined text-[20px]">@item.Icon</span>
+                <span class="text-xs font-medium uppercase tracking-tighter">@item.Label</span>
+            </NavLink>
+        }
+    }
+    <div class="px-3 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Analytics & System</div>
+    <NavLink class="flex items-center gap-3 px-4 py-2 text-slate-400 hover:bg-[#243047]/50 transition-colors" href="/reports" ActiveClass="bg-[#195de6] text-white border-l-2 border-[#195de6]">
+        <span class="material-symbols-outlined text-[20px]">analytics</span>
+        <span class="text-xs font-medium uppercase tracking-tighter">Reports</span>
+    </NavLink>
+</nav>
+<div class="p-4 border-t border-[#344465] bg-[#243047]/20 flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+        <span class="text-[10px] text-slate-400">Server Load</span>
+        <span class="text-[10px] text-[#195de6]">12%</span>
+    </div>
+    <div class="w-full h-1 bg-[#344465]">
+        <div class="h-full bg-[#195de6] w-[12%]"></div>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Label, string Href, string Icon, IReadOnlyList<(string Label, string Href, string Icon)>? SubItems)[] QuotationsWithSubs =
+    {
+        ("Quotations", "/quotations", "request_quote", new (string, string, string)[] { ("All Quotes", "/quotations?view=all", "list"), ("Saved Revisions", "/quotations?view=revisions", "folder_special"), ("New Quotation", "/quotations", "add_circle") })
+    };
+
+    private IReadOnlyList<NavItem> GetNavItems()
+    {
+        var role = Auth.CurrentUser?.Role ?? "";
+        var baseItems = role switch
+        {
+            "MD" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Reports", "/reports", "analytics") },
+            "GM" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Reports", "/reports", "analytics") },
+            "FrontOffice" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail") },
+            "CRMManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail"), ("Quotations", "/quotations", "request_quote"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
+            "CRMStaff" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail"), ("Quotations", "/quotations", "request_quote"), ("Purchase Orders", "/purchaseorders", "shopping_cart") },
+            "ProductionManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user"), ("Inventory", "/inventory", "inventory_2") },
+            "ProductionStaff" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
+            "QualityCheck" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
+            "DispatchStoreManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user"), ("Inventory", "/inventory", "inventory_2"), ("Vendors", "/vendors", "handshake") },
+            _ => new[] { ("Dashboard", "/dashboard", "dashboard") }
+        };
+        var list = new List<NavItem>();
+        foreach (var (label, href, icon) in baseItems)
+        {
+            var withSubs = QuotationsWithSubs.FirstOrDefault(x => x.Label == label);
+            list.Add(new NavItem(label, href, icon, withSubs.SubItems));
+        }
+        return list;
+    }
+
+    private record NavItem(string Label, string Href, string Icon, IReadOnlyList<(string Label, string Href, string Icon)>? SubItems);
+}

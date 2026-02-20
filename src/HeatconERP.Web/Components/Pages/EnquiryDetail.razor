@@ -1,0 +1,179 @@
+@page "/enquiries/{id:guid}"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>@(_e?.EnquiryNumber ?? "Enquiry") - HeatconERP</PageTitle>
+
+<div class="mb-6 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+        <button class="p-2 rounded border border-[#344465] hover:bg-[#243047] text-slate-400 hover:text-white transition-colors" @onclick="@(() => Nav.NavigateTo("/enquiries"))" title="Back to Enquiries">
+            <span class="material-symbols-outlined">arrow_back</span>
+        </button>
+        <h2 class="text-lg font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+            <span class="material-symbols-outlined text-[#195de6]">mail</span>
+            @(_e?.EnquiryNumber ?? "Enquiry")
+        </h2>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="flex items-center justify-center p-12 text-slate-400">Loading enquiry...</div>
+}
+else if (_e == null)
+{
+    <div class="bg-[#243047]/20 border border-[#344465] p-8 text-center text-slate-400">
+        Enquiry not found.
+        <a href="/enquiries" class="text-[#195de6] hover:underline ml-2">Back to list</a>
+    </div>
+}
+else
+{
+    <div class="space-y-6">
+        <!-- 1. Basic Info -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">info</span>
+                    Basic Info
+                </h3>
+            </div>
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div><span class="text-slate-500 text-xs uppercase">Enquiry #</span><div class="font-bold text-[#195de6]">@_e.EnquiryNumber</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Date Received</span><div>@_e.DateReceived.ToString("yyyy-MM-dd")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Source</span><div>@_e.Source</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Assigned To</span><div>@(_e.AssignedTo ?? "—")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Status</span><div><span class="px-2 py-0.5 uppercase text-[9px] font-bold @GetStatusClass(_e.Status)">@_e.Status</span></div></div>
+            </div>
+        </section>
+
+        <!-- 2. Customer Details -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">business</span>
+                    Customer Details
+                </h3>
+            </div>
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div><span class="text-slate-500 text-xs uppercase">Company</span><div class="font-medium">@_e.CompanyName</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Contact Person</span><div>@(_e.ContactPerson ?? "—")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Email</span><div>@(_e.Email ?? "—")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Phone</span><div>@(_e.Phone ?? "—")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">GST</span><div>@(_e.Gst ?? "—")</div></div>
+                <div class="md:col-span-2 lg:col-span-3"><span class="text-slate-500 text-xs uppercase">Address</span><div>@(_e.Address ?? "—")</div></div>
+            </div>
+        </section>
+
+        <!-- 3. Product Requirement -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">inventory_2</span>
+                    Product Requirement
+                </h3>
+            </div>
+            <div class="p-4 space-y-4 text-sm">
+                <div><span class="text-slate-500 text-xs uppercase">Product Description</span><div class="mt-1">@(_e.ProductDescription ?? "—")</div></div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div><span class="text-slate-500 text-xs uppercase">Quantity</span><div>@(_e.Quantity?.ToString() ?? "—")</div></div>
+                    <div><span class="text-slate-500 text-xs uppercase">Expected Delivery</span><div>@(_e.ExpectedDeliveryDate?.ToString("yyyy-MM-dd") ?? "—")</div></div>
+                    <div><span class="text-slate-500 text-xs uppercase">Attachment</span><div>@(_e.AttachmentPath ?? "—")</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Classification -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">category</span>
+                    Classification
+                </h3>
+            </div>
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div><span class="text-slate-500 text-xs uppercase">Aerospace</span><div>@(_e.IsAerospace ? "Yes" : "No")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Priority</span><div><span class="px-2 py-0.5 uppercase text-[9px] font-bold @GetPriorityClass(_e.Priority)">@_e.Priority</span></div></div>
+            </div>
+        </section>
+
+        <!-- 5. Feasibility -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">fact_check</span>
+                    Feasibility
+                </h3>
+            </div>
+            <div class="p-4 space-y-4 text-sm">
+                <div><span class="text-slate-500 text-xs uppercase">Feasibility Status</span><div><span class="px-2 py-0.5 uppercase text-[9px] font-bold @GetFeasibilityClass(_e.FeasibilityStatus)">@_e.FeasibilityStatus</span></div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Notes (internal)</span><div>@(_e.FeasibilityNotes ?? "—")</div></div>
+            </div>
+        </section>
+
+        <!-- 6. System Fields -->
+        <section class="bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-slate-500">settings</span>
+                    System Fields
+                </h3>
+            </div>
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-slate-400">
+                <div><span class="text-slate-500 text-xs uppercase">Created By</span><div>@(_e.CreatedBy ?? "—")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Created At</span><div>@_e.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div></div>
+                <div><span class="text-slate-500 text-xs uppercase">Updated At</span><div>@(_e.UpdatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div></div>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private EnquiryDetailDto? _e;
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _e = await Api.GetEnquiryByIdAsync(Auth.BaseUrl, Id);
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private static string GetStatusClass(string status) => status switch
+    {
+        "New" => "bg-sky-900/40 text-sky-400 border border-sky-800",
+        "Under Review" => "bg-amber-900/40 text-amber-400 border border-amber-800",
+        "Feasible" => "bg-emerald-900/40 text-emerald-400 border border-emerald-800",
+        "Not Feasible" => "bg-red-900/40 text-red-400 border border-red-800",
+        "Converted" => "bg-violet-900/40 text-violet-400 border border-violet-800",
+        "Closed" => "bg-slate-600/40 text-slate-400 border border-slate-500",
+        _ => "bg-[#243047] text-slate-400 border border-[#344465]"
+    };
+
+    private static string GetPriorityClass(string priority) => priority switch
+    {
+        "High" => "bg-red-900/40 text-red-400 border border-red-800",
+        "Medium" => "bg-amber-900/40 text-amber-400 border border-amber-800",
+        "Low" => "bg-slate-600/40 text-slate-400 border border-slate-500",
+        _ => "bg-[#243047] text-slate-400 border border-[#344465]"
+    };
+
+    private static string GetFeasibilityClass(string status) => status switch
+    {
+        "Feasible" => "bg-emerald-900/40 text-emerald-400 border border-emerald-800",
+        "Not Feasible" => "bg-red-900/40 text-red-400 border border-red-800",
+        "Pending" => "bg-amber-900/40 text-amber-400 border border-amber-800",
+        _ => "bg-[#243047] text-slate-400 border border-[#344465]"
+    };
+}

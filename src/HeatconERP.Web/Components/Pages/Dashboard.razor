@@ -1,0 +1,184 @@
+@page "/dashboard"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Dashboard - HeatconERP</PageTitle>
+
+@if (_loading)
+{
+    <div class="flex items-center justify-center p-12">
+        <span class="text-slate-400">Loading dashboard...</span>
+    </div>
+}
+else
+{
+    var kpis = _data?.Kpis ?? [];
+    var chartData = _data?.Chart ?? new ChartDto(0, "Items", [new ChartBarDto("Total", 0, 100)]);
+    var activities = _data?.Activities ?? [];
+    var approvals = _data?.Approvals ?? [];
+
+    <!-- KPI Section -->
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        @foreach (var kpi in kpis)
+        {
+            <div class="bg-[#243047]/50 border border-[#344465] p-4 group hover:border-[#195de6] transition-colors cursor-default">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">@kpi.Title</span>
+                    <span class="material-symbols-outlined @kpi.IconColor text-lg">@kpi.Icon</span>
+                </div>
+                <div class="flex items-end gap-2">
+                    <span class="text-2xl font-bold @kpi.ValueColor leading-none">@kpi.Value</span>
+                    <span class="text-[10px] @kpi.ChangeColor font-bold leading-none mb-1">@kpi.Change</span>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Left: Chart -->
+        <div class="lg:col-span-8 bg-[#243047]/20 border border-[#344465] flex flex-col">
+            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">bar_chart</span>
+                    @GetChartTitle()
+                </h3>
+                <div class="flex gap-2">
+                    <button class="text-[10px] font-bold px-2 py-1 bg-[#195de6] text-white uppercase tracking-tighter">Current</button>
+                    <button class="text-[10px] font-bold px-2 py-1 bg-[#243047] text-slate-400 uppercase tracking-tighter border border-[#344465]">Weekly</button>
+                </div>
+            </div>
+            <div class="flex-1 p-6">
+                <div class="flex flex-col gap-2 mb-4">
+                    <span class="text-3xl font-light text-slate-100 leading-none">@chartData.Total <small class="text-xs font-medium uppercase text-slate-500">@chartData.UnitLabel</small></span>
+                </div>
+                <div class="h-64 flex items-end justify-between gap-4 border-b border-l border-[#344465] pt-4 px-4">
+                    @foreach (var bar in chartData.Bars)
+                    {
+                        <div class="flex flex-col items-center flex-1 group">
+                            <div class="w-full bg-[#195de6]/30 border-t border-[#195de6]/50 flex flex-col justify-end group-hover:bg-[#195de6]/40 transition-all" style="height: @(bar.Height)%">
+                                <span class="text-[10px] text-center mb-1 text-slate-200 font-bold">@bar.Value</span>
+                            </div>
+                            <span class="text-[10px] font-medium text-slate-400 uppercase mt-2 tracking-tighter">@bar.Label</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Activity Log -->
+        <div class="lg:col-span-4 bg-[#111621] border border-[#344465] flex flex-col">
+            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/40">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
+                    Activity Log
+                </h3>
+                <span class="material-symbols-outlined text-slate-500 text-sm hover:text-white cursor-pointer" @onclick="RefreshAsync">refresh</span>
+            </div>
+            <div class="flex-1 overflow-y-auto industrial-scrollbar bg-[#0a0f18] font-mono text-[11px]">
+                @if (activities.Count == 0)
+                {
+                    <div class="p-3 text-slate-500">No activity yet.</div>
+                }
+                else
+                {
+                    @foreach (var entry in activities)
+                    {
+                        <div class="p-3 border-b border-[#344465]/30 hover:bg-[#243047]/10 transition-colors @entry.BgClass">
+                            <div class="flex gap-2 @entry.TagColor mb-1">
+                                <span class="font-bold">[@entry.Time]</span>
+                                <span class="uppercase tracking-widest text-[9px] @entry.TagClass px-1 border @entry.TagBorder">@entry.Tag</span>
+                            </div>
+                            <div class="@entry.TextClass">@((MarkupString)entry.Message)</div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Approvals Table -->
+    <div class="grid grid-cols-12 gap-6 mt-6">
+        <div class="col-span-12 bg-[#243047]/20 border border-[#344465] overflow-hidden">
+            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">assignment_turned_in</span>
+                    Critical Pending Approvals
+                </h3>
+                <a href="#" class="text-[10px] font-bold text-[#195de6] flex items-center gap-1 hover:underline">VIEW ALL QUEUE <span class="material-symbols-outlined text-sm">arrow_forward</span></a>
+            </div>
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-[#111621]/50 border-b border-[#344465] text-[10px] uppercase font-bold text-slate-500">
+                        <th class="px-4 py-3">ID #</th>
+                        <th class="px-4 py-3">Module</th>
+                        <th class="px-4 py-3">Originator</th>
+                        <th class="px-4 py-3">Created</th>
+                        <th class="px-4 py-3">Value</th>
+                        <th class="px-4 py-3 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="text-xs text-slate-300 font-medium">
+                    @if (approvals.Count == 0)
+                    {
+                        <tr><td colspan="6" class="px-4 py-6 text-center text-slate-500">No pending approvals.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in approvals)
+                        {
+                            <tr class="border-b border-[#344465]/30 hover:bg-[#243047]/30 transition-colors group">
+                                <td class="px-4 py-3 font-bold text-[#195de6]">@item.Id</td>
+                                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-[#243047] border border-[#344465] uppercase text-[9px]">@item.Module</span></td>
+                                <td class="px-4 py-3 italic text-slate-400">@item.Originator</td>
+                                <td class="px-4 py-3">@item.Created</td>
+                                <td class="px-4 py-3">@item.Value</td>
+                                <td class="px-4 py-3 text-right">
+                                    <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button class="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase font-bold">Approve</button>
+                                        <button class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] uppercase font-bold">Reject</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private DashboardResponse? _data;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var role = Auth.CurrentUser?.Role ?? "";
+        var baseUrl = Auth.BaseUrl;
+        _data = await Api.GetDashboardAsync(baseUrl, role);
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadAsync();
+    }
+
+    private string GetChartTitle()
+    {
+        var role = Auth.CurrentUser?.Role ?? "";
+        return role is "CRMManager" or "CRMStaff" ? "Enquiry & Order Pipeline" : "Work Order Status Summary";
+    }
+}

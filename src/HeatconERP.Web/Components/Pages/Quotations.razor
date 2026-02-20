@@ -1,0 +1,791 @@
+@page "/quotations"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Quotation &amp; Revision History - HeatconERP</PageTitle>
+
+<div class="-m-6 flex flex-col min-h-[calc(100vh-5.5rem)]">
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- Filter & Header Row -->
+        <div class="bg-[#1a2233] border-b border-[#344465] px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            <div class="flex items-center gap-3">
+                <h1 class="text-xl font-bold text-white leading-none">Quotation &amp; Revision History</h1>
+                <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Industrial Module</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="flex bg-[#111621] rounded border border-[#344465] overflow-hidden p-0.5">
+                    <button class="px-3 py-1 text-xs font-semibold rounded @(_viewFilter == "all" ? "text-white bg-[#195de6]" : "text-slate-400 hover:text-white")" @onclick="@(() => SetViewFilter("all"))">All Quotes</button>
+                    <button class="px-3 py-1 text-xs font-semibold rounded @(_viewFilter == "revisions" ? "text-white bg-[#195de6]" : "text-slate-400 hover:text-white")" @onclick="@(() => SetViewFilter("revisions"))">Saved Revisions</button>
+                </div>
+                <div class="h-6 w-[1px] bg-[#344465]"></div>
+                <button class="flex items-center gap-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white px-4 py-2 text-xs font-bold rounded shadow-lg shadow-[#195de6]/10 transition-all" @onclick="CreateNewQuotation">
+                    <span class="material-symbols-outlined text-sm">add</span>
+                    New Quotation
+                </button>
+            </div>
+        </div>
+
+        <!-- Dashboard Layout Grid -->
+        <div class="flex-1 flex overflow-hidden min-h-0">
+            <!-- Left Side: Data Management -->
+            <div class="flex-1 flex flex-col overflow-hidden border-r border-[#344465]">
+                <!-- Search and Filters Section -->
+                <div class="p-4 grid grid-cols-4 gap-4 bg-[#111621]/50 shrink-0">
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Search ID</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" type="text" placeholder="QT-2024-" @bind="_searchId" @bind:after="LoadAsync" />
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Client</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_filterClient" @bind:after="LoadAsync">
+                            <option value="">All Clients</option>
+                            @foreach (var c in _clientOptions)
+                            {
+                                <option value="@c">@c</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_filterStatus" @bind:after="LoadAsync">
+                            <option value="">All Statuses</option>
+                            <option value="Draft">Draft</option>
+                            <option value="In Review">In Review</option>
+                            <option value="Published">Published</option>
+                            <option value="Expired">Expired</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end gap-2">
+                        <button class="flex-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="LoadAsync">
+                            <span class="material-symbols-outlined text-sm">filter_list</span> Filter
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Data Grid (Quote History) -->
+                <div class="flex-1 overflow-auto industrial-scrollbar min-h-0 max-h-[35vh]">
+                    @if (_loading)
+                    {
+                        <div class="flex items-center justify-center p-12 text-slate-400">Loading quotations...</div>
+                    }
+                    else if (_viewFilter == "revisions")
+                    {
+                        <table class="w-full border-collapse text-left text-xs">
+                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10 shadow-sm">
+                                <tr>
+                                    <th class="px-2 py-3 font-semibold text-slate-400 uppercase tracking-tight w-8"></th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-24">Quote ID</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-20">Enquiry ID</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Client / Project</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-20">Ver.</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Created Date</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Total (INR)</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-[#344465]/50">
+                                @if (_quotations.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="9" class="px-4 py-8 text-center">
+                                            <p class="text-slate-500 mb-2">No quotations found.</p>
+                                            <p class="text-slate-600 text-xs">@(_enquiryId.HasValue ? "Create a new quotation from an enquiry." : "Click <strong class=\"text-[#195de6]\">New Quotation</strong> or convert from an enquiry.")</p>
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var q in _quotations)
+                                    {
+                                        var isExpanded = _expandedQuotationIds.Contains(q.Id);
+                                        <tr class="hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(q.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent hover:border-[#195de6]")" @onclick="@(() => SelectQuotation(q.Id))">
+                                            <td class="px-2 py-3" @onclick:stopPropagation="true">
+                                                <button class="p-0.5 rounded hover:bg-[#344465]/50 text-slate-400 hover:text-white" @onclick="@(() => ToggleExpandAsync(q.Id))">
+                                                    <span class="material-symbols-outlined text-sm">@(isExpanded ? "expand_more" : "chevron_right")</span>
+                                                </button>
+                                            </td>
+                                            <td class="px-4 py-3 font-bold text-[#195de6]">@q.ReferenceNumber</td>
+                                            <td class="px-4 py-3 text-slate-400 font-mono text-[10px]">@(q.EnquiryNumber ?? "—")</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-slate-200">@(q.ClientName ?? "—")</div>
+                                                <div class="text-slate-500 text-[10px]">@(q.ProjectName ?? "—")</div>
+                                            </td>
+                                            <td class="px-4 py-3"><span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-mono">@q.Version</span></td>
+                                            <td class="px-4 py-3 text-slate-400 font-mono">@q.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td class="px-4 py-3 font-bold text-slate-200">@FormatInr(q.Amount ?? 0)</td>
+                                            <td class="px-4 py-3">
+                                                <span class="flex items-center gap-1.5 @GetStatusClass(q.Status)">
+                                                    <span class="h-1.5 w-1.5 rounded-full @GetStatusDotClass(q.Status)"></span> @q.Status
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 text-right">
+                                                <button class="material-symbols-outlined text-slate-500 hover:text-[#195de6]" @onclick:stopPropagation="true" @onclick="@(() => SelectQuotation(q.Id))">edit_square</button>
+                                            </td>
+                                        </tr>
+                                        @if (isExpanded && _quotationDetailsCache.TryGetValue(q.Id, out var detail))
+                                        {
+                                            @foreach (var rev in detail.Revisions.OrderByDescending(r => r.ChangedAt))
+                                            {
+                                                <tr class="bg-[#111621]/80 hover:bg-[#195de6]/10 cursor-pointer border-l-2 border-[#195de6]/30 @(_viewingRevisionDetail?.Id == rev.Id ? "bg-[#195de6]/15" : "")" @onclick="@(() => SelectRevisionAsync(q.Id, rev.Id))" @onclick:stopPropagation="true">
+                                                    <td class="px-2 py-2"></td>
+                                                    <td class="px-4 py-2 pl-8 text-slate-500 font-mono text-[10px]" colspan="2">
+                                                        <span class="bg-[#195de6]/20 text-[#195de6] px-1.5 py-0.5 rounded font-mono">@rev.Version</span>
+                                                        <span class="text-slate-500 ml-2">@rev.Action</span>
+                                                    </td>
+                                                    <td class="px-4 py-2 text-slate-400" colspan="2">@rev.ChangedBy</td>
+                                                    <td class="px-4 py-2 text-slate-500 font-mono text-[10px]">@FormatRevisionDate(rev.ChangedAt)</td>
+                                                    <td class="px-4 py-2" colspan="2">
+                                                        @if (!string.IsNullOrEmpty(rev.ChangeDetails))
+                                                        {
+                                                            <span class="text-[10px] text-slate-500 truncate max-w-[200px]" title="@rev.ChangeDetails">@(rev.ChangeDetails.Length > 40 ? rev.ChangeDetails[..40] + "…" : rev.ChangeDetails)</span>
+                                                        }
+                                                    </td>
+                                                    <td class="px-4 py-2"><span class="material-symbols-outlined text-slate-500 text-sm">visibility</span></td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <table class="w-full border-collapse text-left text-xs">
+                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10 shadow-sm">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-24">Quote ID</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-20">Enquiry ID</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Client / Project</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight w-20">Ver.</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Created Date</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Total (INR)</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-[#344465]/50">
+                                @if (_quotations.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="8" class="px-4 py-8 text-center">
+                                            <p class="text-slate-500 mb-2">No quotations found.</p>
+                                            <p class="text-slate-600 text-xs">@(_enquiryId.HasValue ? "Create a new quotation from an enquiry." : "Click <strong class=\"text-[#195de6]\">New Quotation</strong> or convert from an enquiry.")</p>
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var q in _quotations)
+                                    {
+                                        <tr class="hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(q.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent hover:border-[#195de6]")" @onclick="@(() => SelectQuotation(q.Id))">
+                                            <td class="px-4 py-3 font-bold text-[#195de6]">@q.ReferenceNumber</td>
+                                            <td class="px-4 py-3 text-slate-400 font-mono text-[10px]">@(q.EnquiryNumber ?? "—")</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-slate-200">@(q.ClientName ?? "—")</div>
+                                                <div class="text-slate-500 text-[10px]">@(q.ProjectName ?? "—")</div>
+                                            </td>
+                                            <td class="px-4 py-3"><span class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-mono">@q.Version</span></td>
+                                            <td class="px-4 py-3 text-slate-400 font-mono">@q.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                            <td class="px-4 py-3 font-bold text-slate-200">@FormatInr(q.Amount ?? 0)</td>
+                                            <td class="px-4 py-3">
+                                                <span class="flex items-center gap-1.5 @GetStatusClass(q.Status)">
+                                                    <span class="h-1.5 w-1.5 rounded-full @GetStatusDotClass(q.Status)"></span> @q.Status
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-3 text-right">
+                                                <button class="material-symbols-outlined text-slate-500 hover:text-[#195de6]" @onclick:stopPropagation="true" @onclick="@(() => SelectQuotation(q.Id))">edit_square</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <!-- Sub Panel: Saved Quotations / Revisions (always visible) -->
+                <div class="border-t-2 border-[#195de6]/30 bg-[#1a2233] flex flex-col shrink-0">
+                    <div class="px-4 py-2 border-b border-[#344465] bg-[#111621] flex items-center justify-between shrink-0">
+                        <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm text-[#195de6]">folder_special</span> Saved Quotations / Revisions
+                            @if (_saveSuccess)
+                            {
+                                <span class="text-[10px] text-emerald-400 font-normal normal-case">✓ Saved</span>
+                            }
+                        </h3>
+                    </div>
+                    <div class="overflow-auto industrial-scrollbar p-3 h-[140px]">
+                        @if (_selectedDetail == null)
+                        {
+                            <p class="text-xs text-slate-500 italic py-2">Select a quotation from the grid above to view saved revisions and details.</p>
+                        }
+                        else if (!_selectedDetail.Revisions.Any())
+                        {
+                            <p class="text-xs text-slate-500 italic py-2">No saved revisions yet. Click <strong class="text-[#195de6]">Save Details</strong> in the right panel to save, or <strong class="text-[#195de6]">New Revision</strong> to create a version.</p>
+                        }
+                        else
+                        {
+                            <div class="space-y-2">
+                                @foreach (var rev in _selectedDetail.Revisions.OrderByDescending(r => r.ChangedAt))
+                                {
+                                    <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#243047]/50 border border-[#344465]/50 hover:bg-[#243047] hover:border-[#195de6]/50 cursor-pointer transition-colors @(_viewingRevisionDetail?.Id == rev.Id ? "border-[#195de6] bg-[#195de6]/10" : "")" @onclick="@(() => SelectRevisionAsync(_selectedDetail.Id, rev.Id))">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <span class="bg-[#195de6]/20 text-[#195de6] px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0">@rev.Version</span>
+                                            <div class="min-w-0">
+                                                <p class="text-[11px] font-medium text-slate-200 truncate">@rev.ChangedBy @rev.Action</p>
+                                                <p class="text-[10px] text-slate-500">@FormatRevisionDate(rev.ChangedAt)</p>
+                                            </div>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(rev.ChangeDetails))
+                                        {
+                                            <span class="text-[10px] text-slate-500 truncate max-w-[120px]" title="@rev.ChangeDetails">@(rev.ChangeDetails.Length > 25 ? rev.ChangeDetails[..25] + "…" : rev.ChangeDetails)</span>
+                                        }
+                                        <span class="material-symbols-outlined text-slate-500 text-sm shrink-0">visibility</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (_selectedDetail != null && _saveSuccess)
+                    {
+                        <div class="px-3 py-2 border-t border-[#344465]/50 bg-emerald-500/10 text-[10px] text-emerald-400 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">check_circle</span>
+                            <span>@_selectedDetail.ReferenceNumber-@_selectedDetail.Version saved @(string.IsNullOrEmpty(_editClientName) ? "" : $"• {_editClientName}")</span>
+                        </div>
+                    }
+                </div>
+
+                <!-- Bottom Form: Line-Item Editor -->
+                <div class="h-1/3 min-h-[200px] bg-[#1a2233] border-t border-[#344465] flex flex-col shadow-2xl z-20 shrink-0">
+                    <div class="px-4 py-2 border-b border-[#344465] bg-[#111621]/30 flex items-center justify-between shrink-0">
+                        <div class="flex items-center gap-2">
+                            @if (_viewingRevisionDetail != null)
+                            {
+                                <span class="text-[10px] text-slate-500 italic">Viewing revision @_viewingRevisionDetail.Version — click <strong class="text-[#195de6]">Back to current</strong> in right panel to edit</span>
+                            }
+                            else
+                            {
+                                <span class="material-symbols-outlined text-sm text-[#195de6]">edit_note</span>
+                                <span class="text-xs font-bold text-white uppercase tracking-wider">Line-Item Editor @(_selectedDetail != null ? $"({_selectedDetail.ReferenceNumber}-{_selectedDetail.Version})" : "")</span>
+                                @if (_selectedDetail != null && !string.IsNullOrEmpty(_selectedDetail.EnquiryNumber))
+                                {
+                                    <span class="text-[10px] text-slate-500 font-mono">Enquiry: @_selectedDetail.EnquiryNumber</span>
+                                }
+                                else if (_selectedDetail != null)
+                                {
+                                    <span class="text-[10px] text-slate-600 italic">Manual quotation</span>
+                                }
+                            }
+                        </div>
+                        <button class="text-[10px] font-bold text-slate-400 hover:text-white flex items-center gap-1">
+                            <span class="material-symbols-outlined text-xs">attach_file</span> Attach Specs
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+                        @if (_selectedDetail == null)
+                        {
+                            <p class="p-4 text-sm text-slate-500 italic">Select a quotation from the grid to edit line items.</p>
+                        }
+                        else
+                        {
+                            <table class="w-full border-collapse text-[11px]">
+                                <thead class="sticky top-0 bg-[#1a2233] border-b border-[#344465] shadow-sm">
+                                    <tr class="text-slate-500 font-bold uppercase">
+                                        <th class="px-4 py-2 w-12 text-center">#</th>
+                                        <th class="px-4 py-2">Part Number</th>
+                                        <th class="px-4 py-2">Description</th>
+                                        <th class="px-4 py-2 w-20">Qty</th>
+                                        <th class="px-4 py-2 w-32">Unit Price (₹)</th>
+                                        <th class="px-4 py-2 w-24">Tax (%)</th>
+                                        <th class="px-4 py-2 w-12 text-center"><span class="material-symbols-outlined text-sm">attachment</span></th>
+                                        <th class="px-4 py-2 w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-[#344465]/30">
+                                    @foreach (var (item, idx) in _editingLineItems.Select((x, i) => (x, i + 1)))
+                                    {
+                                        <tr class="@(idx == 2 ? "bg-[#195de6]/5" : "")">
+                                            <td class="px-4 py-2 text-center text-slate-500">@idx</td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-xs py-1 px-2 text-slate-100" @bind="item.PartNumber" placeholder="Part #" /></td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-xs py-1 px-2 text-slate-100" @bind="item.Description" placeholder="Description" /></td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-xs py-1 px-2 text-slate-100" type="number" @bind="item.Quantity" /></td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-xs py-1 px-2 text-slate-100" type="number" step="0.01" @bind="item.UnitPrice" /></td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-xs py-1 px-2 text-slate-100" type="number" step="0.01" @bind="item.TaxPercent" /></td>
+                                            <td class="px-4 py-2"><input class="w-full bg-[#111621] border border-[#344465] rounded text-[10px] py-1 px-2 text-slate-400" @bind="item.AttachmentPath" placeholder="URL or path" title="Attachment URL or file path" /></td>
+                                            <td class="px-4 py-2 text-center"><button class="material-symbols-outlined text-red-400 text-sm" @onclick="@(() => RemoveLineItem(idx - 1))">delete</button></td>
+                                        </tr>
+                                    }
+                                    <tr>
+                                        <td class="px-4 py-1" colspan="8">
+                                            <button class="text-[#195de6] hover:underline font-bold text-[10px] flex items-center gap-1 uppercase" @onclick="AddLineItem">
+                                                <span class="material-symbols-outlined text-xs">add_circle</span> Add Row
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+
+                <!-- Action Footer -->
+                @if (_selectedDetail != null && _viewingRevisionDetail == null)
+                {
+                    <div class="px-6 py-3 bg-[#1a2233] border-t border-[#344465] flex items-center justify-between shrink-0">
+                        <div class="flex gap-4 items-center">
+                            <div class="text-right">
+                                <span class="text-[10px] text-slate-500 font-bold uppercase block leading-none">Subtotal</span>
+                                <span class="text-sm font-bold text-slate-200">@FormatInr(_subtotal)</span>
+                            </div>
+                            <div class="h-8 w-[1px] bg-[#344465]"></div>
+                            <div class="text-right">
+                                <span class="text-[10px] text-slate-500 font-bold uppercase block leading-none">Total Tax</span>
+                                <span class="text-sm font-bold text-slate-200">@FormatInr(_totalTax)</span>
+                            </div>
+                            <div class="h-8 w-[1px] bg-[#344465]"></div>
+                            <div class="text-right px-4">
+                                <span class="text-[10px] text-[#195de6] font-bold uppercase block leading-none">Grand Total</span>
+                                <span class="text-lg font-black text-white">@FormatInr(_grandTotal)</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-3">
+                            <button class="bg-[#111621] hover:bg-[#344465] text-slate-300 px-4 py-2 text-xs font-bold rounded border border-[#344465] transition-colors flex items-center gap-2" @onclick="SaveDraft">
+                                <span class="material-symbols-outlined text-sm">save</span> Save as Draft
+                            </button>
+                            <button class="bg-[#111621] hover:bg-[#344465] text-slate-300 px-4 py-2 text-xs font-bold rounded border border-[#344465] transition-colors flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">picture_as_pdf</span> Export PDF
+                            </button>
+                            <button class="bg-[#195de6] hover:bg-[#195de6]/90 text-white px-6 py-2 text-xs font-bold rounded shadow-lg shadow-[#195de6]/20 transition-all flex items-center gap-2" @onclick="GenerateRevision">
+                                <span class="material-symbols-outlined text-sm">history_edu</span> Generate Revision
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Right Sidebar: Edit Details + Audit Log -->
+            <aside class="w-96 bg-[#111621] flex flex-col shrink-0 border-l border-[#344465]">
+                @if (_selectedDetail == null)
+                {
+                    <div class="p-6 flex-1 flex items-center justify-center">
+                        <p class="text-sm text-slate-500 italic text-center">Select a quotation from the grid to edit details, add images, and view revision history.</p>
+                    </div>
+                }
+                else if (_viewingRevisionDetail != null)
+                {
+                    <!-- Revision Detail View (read-only) -->
+                    <div class="p-4 border-b border-[#344465] bg-[#195de6]/10 shrink-0">
+                        <button class="text-[#195de6] hover:underline font-bold text-[10px] flex items-center gap-1 mb-3" @onclick="ClearRevisionView">
+                            <span class="material-symbols-outlined text-sm">arrow_back</span> Back to current
+                        </button>
+                        <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm text-[#195de6]">history</span> Revision @_viewingRevisionDetail.Version
+                        </h3>
+                        <p class="text-[10px] text-slate-500 mt-1">@_viewingRevisionDetail.ChangedBy • @_viewingRevisionDetail.Action • @FormatRevisionDate(_viewingRevisionDetail.ChangedAt)</p>
+                    </div>
+                    <div class="flex-1 overflow-auto industrial-scrollbar p-4 space-y-4">
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Client</label>
+                            <p class="text-sm text-slate-200">@(_viewingRevisionDetail.ClientName ?? "—")</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Project</label>
+                            <p class="text-sm text-slate-200">@(_viewingRevisionDetail.ProjectName ?? "—")</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Status</label>
+                            <p class="text-sm text-slate-200">@(_viewingRevisionDetail.Status ?? "—")</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Description</label>
+                            <p class="text-sm text-slate-200 whitespace-pre-wrap">@(_viewingRevisionDetail.Description ?? "—")</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Attachments</label>
+                            <p class="text-sm text-slate-200 break-all">@(_viewingRevisionDetail.Attachments ?? "—")</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Total (INR)</label>
+                            <p class="text-sm font-bold text-slate-200">@FormatInr(_viewingRevisionDetail.Amount ?? 0)</p>
+                        </div>
+                        @if (_viewingRevisionDetail.LineItems.Any())
+                        {
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-2">Line Items</label>
+                                <div class="space-y-2">
+                                    @foreach (var (li, idx) in _viewingRevisionDetail.LineItems.Select((x, i) => (x, i + 1)))
+                                    {
+                                        <div class="bg-[#1a2233] border border-[#344465] rounded p-2 text-[11px]">
+                                            <p class="font-semibold text-slate-200">@idx. @li.PartNumber</p>
+                                            <p class="text-slate-500">@li.Description</p>
+                                            <p class="text-slate-400 mt-1">Qty: @li.Quantity × ₹@li.UnitPrice.ToString("N2") + @li.TaxPercent% tax</p>
+                                            @if (!string.IsNullOrEmpty(li.AttachmentPath))
+                                            {
+                                                <p class="text-[10px] text-slate-500 mt-1">Attachment: @li.AttachmentPath</p>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <!-- Edit Quotation Details -->
+                    <div class="p-4 border-b border-[#344465] bg-[#1a2233]/50 shrink-0">
+                        <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2 mb-4">
+                            <span class="material-symbols-outlined text-sm text-[#195de6]">edit_note</span> Edit Quotation Details
+                        </h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Client</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_editClientName" placeholder="Client name" />
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Project</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_editProjectName" placeholder="Project name" />
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Status</label>
+                                <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_editStatus">
+                                    <option value="Draft">Draft</option>
+                                    <option value="In Review">In Review</option>
+                                    <option value="Published">Published</option>
+                                    <option value="Expired">Expired</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Description</label>
+                                <textarea class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6] min-h-[80px] resize-y" @bind="_editDescription" placeholder="Quotation description or notes..." rows="3"></textarea>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Images / Attachments</label>
+                                <div class="space-y-2">
+                                    @foreach (var (url, idx) in _attachmentUrls.Select((u, i) => (u, i)))
+                                    {
+                                        <div class="flex gap-2 items-center">
+                                            <input class="flex-1 bg-[#243047] border border-[#344465] rounded text-xs py-1 px-2 text-slate-200" @bind="_attachmentUrls[idx]" placeholder="Image URL or path" />
+                                            <button class="material-symbols-outlined text-red-400 text-sm hover:text-red-300" @onclick="@(() => RemoveAttachment(idx))" title="Remove">delete</button>
+                                        </div>
+                                    }
+                                    <button class="text-[#195de6] hover:underline font-bold text-[10px] flex items-center gap-1" @onclick="AddAttachment">
+                                        <span class="material-symbols-outlined text-xs">add_photo_alternate</span> Add Image / Attachment
+                                    </button>
+                                </div>
+                            </div>
+                            <button class="w-full bg-[#195de6] hover:bg-[#195de6]/90 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="SaveQuotationAsync">
+                                <span class="material-symbols-outlined text-sm">save</span> @(_saveSuccess ? "Saved ✓" : "Save Details")
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Audit Log / Revisions -->
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <div class="p-4 border-b border-[#344465] bg-[#1a2233]/30 shrink-0">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm text-[#195de6]">history</span> Audit Log / Revisions
+                            </h3>
+                        </div>
+                        <div class="flex-1 overflow-auto industrial-scrollbar p-4 min-h-0">
+                            @if (!_selectedDetail.Revisions.Any())
+                            {
+                                <p class="text-sm text-slate-500 italic">No revision history yet.</p>
+                            }
+                            else
+                            {
+                                <div class="relative space-y-6 border-l border-[#344465] ml-2">
+                                    @foreach (var (rev, isFirst) in _selectedDetail.Revisions.Select((r, i) => (r, i == 0)))
+                                    {
+                                        <div class="relative pl-5 cursor-pointer" @onclick="@(() => SelectRevisionAsync(_selectedDetail.Id, rev.Id))">
+                                            <span class="absolute -left-[5px] top-1 h-2 w-2 rounded-full @(isFirst ? "bg-[#195de6] ring-4 ring-[#195de6]/20" : "bg-[#344465]")"></span>
+                                            <div class="text-[10px] font-mono text-slate-500 mb-1">@FormatRevisionDate(rev.ChangedAt)</div>
+                                            <div class="bg-[#1a2233] border border-[#344465] rounded p-3 hover:border-[#195de6]/50 transition-colors @(_viewingRevisionDetail?.Id == rev.Id ? "border-[#195de6]" : "")">
+                                                <p class="text-[11px] font-semibold text-slate-200"><span class="text-[#195de6]">@rev.ChangedBy</span> @rev.Action @rev.Version <span class="material-symbols-outlined text-slate-500 text-xs align-middle">visibility</span></p>
+                                                @if (!string.IsNullOrEmpty(rev.ChangeDetails))
+                                                {
+                                                    <p class="text-[10px] text-slate-500 mt-1">@rev.ChangeDetails</p>
+                                                }
+                                                @if (!string.IsNullOrEmpty(rev.AttachmentFileName))
+                                                {
+                                                    <div class="mt-2 flex items-center gap-2 text-[10px] bg-[#111621]/50 p-1.5 rounded text-slate-400">
+                                                        <span class="material-symbols-outlined text-xs">attach_file</span> @rev.AttachmentFileName
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-[#344465] shrink-0">
+                        <a href="/enquiries" class="block w-full bg-[#1a2233] hover:bg-[#344465] text-slate-400 py-2 text-[10px] font-bold uppercase rounded transition-colors text-center">View Linked Enquiries</a>
+                    </div>
+                }
+            </aside>
+        </div>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "enquiry")]
+    private Guid? EnquiryId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "view")]
+    private string? View { get; set; }
+
+    private List<QuotationListDto> _quotations = [];
+    private QuotationDetailDto? _selectedDetail;
+    private Guid? _selectedId;
+    private HashSet<Guid> _expandedQuotationIds = [];
+    private Dictionary<Guid, QuotationDetailDto> _quotationDetailsCache = [];
+    private QuotationRevisionDetailDto? _viewingRevisionDetail;
+    private string _editClientName = "";
+    private string _editProjectName = "";
+    private string _editDescription = "";
+    private string _editStatus = "Draft";
+    private string _editAttachments = "";
+    private List<string> _attachmentUrls = [];
+    private string _searchId = "";
+    private string _filterClient = "";
+    private string _filterStatus = "";
+    private string _viewFilter = "all"; // "all" | "revisions"
+    private bool _loading = true;
+    private List<EditableLineItem> _editingLineItems = [];
+    private HashSet<string> _clientOptions = [];
+
+    private decimal _subtotal => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice);
+    private decimal _totalTax => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice * (x.TaxPercent / 100m));
+    private decimal _grandTotal => _subtotal + _totalTax;
+
+    private Guid? _enquiryId => EnquiryId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (View == "revisions" || View == "all")
+            _viewFilter = View;
+        await LoadAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (View == "revisions" || View == "all")
+            _viewFilter = View;
+    }
+
+    private void SetViewFilter(string view)
+    {
+        _viewFilter = view;
+        var path = Nav.Uri.Split('?')[0];
+        var query = $"view={view}";
+        if (_enquiryId.HasValue)
+            query += $"&enquiry={_enquiryId.Value}";
+        Nav.NavigateTo($"{path}?{query}", forceLoad: false);
+        StateHasChanged();
+    }
+
+    private async Task SelectRevisionAsync(Guid quotationId, Guid revisionId)
+    {
+        _viewingRevisionDetail = await Api.GetRevisionByIdAsync(Auth.BaseUrl, quotationId, revisionId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearRevisionView()
+    {
+        _viewingRevisionDetail = null;
+        StateHasChanged();
+    }
+
+    private async Task ToggleExpandAsync(Guid id)
+    {
+        if (_expandedQuotationIds.Contains(id))
+        {
+            _expandedQuotationIds.Remove(id);
+        }
+        else
+        {
+            _expandedQuotationIds.Add(id);
+            if (!_quotationDetailsCache.ContainsKey(id))
+            {
+                var detail = await Api.GetQuotationByIdAsync(Auth.BaseUrl, id);
+                if (detail != null)
+                    _quotationDetailsCache[id] = detail;
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _quotationDetailsCache.Clear();
+        _expandedQuotationIds.Clear();
+        StateHasChanged();
+        var items = await Api.GetQuotationsAsync(Auth.BaseUrl, _enquiryId,
+            string.IsNullOrWhiteSpace(_searchId) ? null : _searchId,
+            string.IsNullOrWhiteSpace(_filterClient) ? null : _filterClient,
+            string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus);
+        _quotations = items?.ToList() ?? [];
+        _clientOptions = _quotations.Where(q => !string.IsNullOrEmpty(q.ClientName)).Select(q => q.ClientName!).ToHashSet();
+        _loading = false;
+        if (_selectedId.HasValue && !_quotations.Any(q => q.Id == _selectedId.Value))
+            _selectedId = null;
+        if (_selectedId.HasValue)
+            await LoadDetailAsync(_selectedId.Value);
+        else if (_quotations.Count > 0 && !_selectedId.HasValue)
+            await SelectQuotation(_quotations[0].Id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SelectQuotation(Guid id)
+    {
+        _selectedId = id;
+        _viewingRevisionDetail = null;
+        await LoadDetailAsync(id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadDetailAsync(Guid id)
+    {
+        _selectedDetail = await Api.GetQuotationByIdAsync(Auth.BaseUrl, id);
+        _editClientName = _selectedDetail?.ClientName ?? "";
+        _editProjectName = _selectedDetail?.ProjectName ?? "";
+        _editDescription = _selectedDetail?.Description ?? "";
+        _editStatus = _selectedDetail?.Status ?? "Draft";
+        _editAttachments = _selectedDetail?.Attachments ?? "";
+        _attachmentUrls = string.IsNullOrWhiteSpace(_editAttachments) ? [""] : _editAttachments.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (_attachmentUrls.Count == 0) _attachmentUrls.Add("");
+        _editingLineItems = _selectedDetail?.LineItems.Select(li => new EditableLineItem
+        {
+            PartNumber = li.PartNumber,
+            Description = li.Description,
+            Quantity = li.Quantity,
+            UnitPrice = li.UnitPrice,
+            TaxPercent = li.TaxPercent,
+            AttachmentPath = li.AttachmentPath
+        }).ToList() ?? [];
+        if (_editingLineItems.Count == 0)
+            _editingLineItems.Add(new EditableLineItem());
+    }
+
+    private async Task CreateNewQuotation()
+    {
+        try
+        {
+            var created = await Api.CreateQuotationAsync(Auth.BaseUrl, _enquiryId, Auth.CurrentUser?.Username);
+            if (created != null)
+            {
+                await LoadAsync();
+                _selectedId = created.Id;
+                await LoadDetailAsync(created.Id);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AddLineItem()
+    {
+        _editingLineItems.Add(new EditableLineItem());
+        StateHasChanged();
+    }
+
+    private void RemoveLineItem(int index)
+    {
+        if (index >= 0 && index < _editingLineItems.Count)
+        {
+            _editingLineItems.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveDraft()
+    {
+        if (_selectedDetail == null) return;
+        await SaveQuotationAsync();
+    }
+
+    private void AddAttachment() { _attachmentUrls.Add(""); StateHasChanged(); }
+    private void RemoveAttachment(int idx) { if (idx >= 0 && idx < _attachmentUrls.Count) { _attachmentUrls.RemoveAt(idx); StateHasChanged(); } }
+
+    private async Task SaveQuotationAsync()
+    {
+        if (_selectedDetail == null) return;
+        _editAttachments = string.Join(",", _attachmentUrls.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()));
+        var lineItems = _editingLineItems.Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description)).Select(x => new LineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath)).ToList();
+        var input = new UpdateQuotationInput(_editStatus, _editClientName, _editProjectName, _editDescription, _editAttachments, lineItems, Auth.CurrentUser?.Username ?? "System");
+        var ok = await Api.UpdateQuotationAsync(Auth.BaseUrl, _selectedDetail.Id, input);
+        if (ok)
+        {
+            await LoadAsync();
+            _saveSuccess = true;
+            _ = ClearSaveSuccessAfterDelay();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private bool _saveSuccess;
+    private async Task ClearSaveSuccessAfterDelay() { await Task.Delay(2000); _saveSuccess = false; await InvokeAsync(StateHasChanged); }
+
+    private async Task GenerateRevision()
+    {
+        if (_selectedDetail == null) return;
+        var lineItems = _editingLineItems.Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description)).Select(x => new LineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath)).ToList();
+        var details = string.Join("; ", lineItems.Select(li => $"{li.PartNumber}: qty {li.Quantity}, {FormatInr(li.UnitPrice)}"));
+        var updated = await Api.GenerateQuotationRevisionAsync(Auth.BaseUrl, _selectedDetail.Id, lineItems, details, Auth.CurrentUser?.Username);
+        if (updated != null)
+        {
+            _selectedDetail = updated;
+            _editingLineItems = updated.LineItems.Select(li => new EditableLineItem { PartNumber = li.PartNumber, Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice, TaxPercent = li.TaxPercent, AttachmentPath = li.AttachmentPath }).ToList();
+            await LoadAsync();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetStatusClass(string status) => status switch
+    {
+        "In Review" => "text-blue-400 font-medium",
+        "Published" => "text-emerald-400 font-medium",
+        "Draft" => "text-slate-500 font-medium",
+        _ => "text-slate-400 font-medium"
+    };
+
+    private static string GetStatusDotClass(string status) => status switch
+    {
+        "In Review" => "bg-blue-400",
+        "Published" => "bg-emerald-400",
+        "Draft" => "bg-slate-500",
+        _ => "bg-slate-500"
+    };
+
+    private static string FormatInr(decimal value)
+    {
+        return "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
+    }
+
+    private static string FormatRevisionDate(DateTime dt)
+    {
+        var now = DateTime.UtcNow;
+        if (dt.Date == now.Date) return $"Today, {dt:HH:mm}";
+        if (dt.Date == now.Date.AddDays(-1)) return $"Yesterday, {dt:HH:mm}";
+        return dt.ToString("MMM dd, HH:mm");
+    }
+
+    private class EditableLineItem
+    {
+        public string PartNumber { get; set; } = "";
+        public string Description { get; set; } = "";
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal TaxPercent { get; set; }
+        public string? AttachmentPath { get; set; }
+    }
+}

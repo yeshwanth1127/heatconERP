@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HeatconERP.API/HeatconERP.API.csproj" />
+    <Project Path="src/HeatconERP.Application/HeatconERP.Application.csproj" />
+    <Project Path="src/HeatconERP.Desktop/HeatconERP.Desktop.csproj" />
+    <Project Path="src/HeatconERP.Domain/HeatconERP.Domain.csproj" />
+    <Project Path="src/HeatconERP.Infrastructure/HeatconERP.Infrastructure.csproj" />
+    <Project Path="src/HeatconERP.Web/HeatconERP.Web.csproj" />
+  </Folder>
+</Solution>

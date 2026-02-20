@@ -1,0 +1,22 @@
+<UserControl x:Class="HeatconERP.Desktop.Views.LoginView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="40" Width="320" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel>
+            <TextBlock Text="HeatconERP" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+            <TextBlock Text="Manufacturing ERP" FontSize="14" Foreground="Gray" HorizontalAlignment="Center" Margin="0,0,0,24"/>
+
+            <TextBlock Text="API URL" Margin="0,0,0,4"/>
+            <TextBox x:Name="ApiUrlBox" Padding="8,6" Text="http://localhost:5212" VerticalContentAlignment="Center" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Username" Margin="0,0,0,4"/>
+            <TextBox x:Name="UsernameBox" Padding="8,6" VerticalContentAlignment="Center" Margin="0,0,0,16"/>
+
+            <TextBlock Text="Password" Margin="0,0,0,4"/>
+            <PasswordBox x:Name="PasswordBox" Padding="8,6" Margin="0,0,0,20"/>
+
+            <TextBlock x:Name="ErrorText" Foreground="Red" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,0,0,8"/>
+            <Button x:Name="LoginBtn" Content="Login" Padding="24,10" FontSize="14" Click="LoginBtn_Click" HorizontalAlignment="Left"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
