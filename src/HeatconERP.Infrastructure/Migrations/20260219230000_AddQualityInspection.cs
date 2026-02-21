@@ -1,10 +1,14 @@
 using System;
+using HeatconERP.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace HeatconERP.Infrastructure.Migrations
 {
+    [DbContext(typeof(HeatconDbContext))]
+    [Migration("20260219230000_AddQualityInspection")]
     public partial class AddQualityInspection : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

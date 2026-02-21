@@ -15,5 +15,11 @@ public class WorkOrder
 
     public string? AssignedToUserName { get; set; }
 
+    // CRM -> Production dispatch workflow
+    public DateTime? SentToProductionAt { get; set; }
+    public string? SentToProductionBy { get; set; }
+    public DateTime? ProductionReceivedAt { get; set; }
+    public string? ProductionReceivedBy { get; set; }
+
     public ICollection<WorkOrderLineItem> LineItems { get; set; } = [];
 }

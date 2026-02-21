@@ -1,0 +1,95 @@
+@page "/batch-traceability"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Batch Traceability - HeatconERP</PageTitle>
+
+<div class="bg-[#1a2233] border border-[#344465] px-6 py-3 flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-white leading-none">Batch Traceability</h1>
+        <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Audit</span>
+    </div>
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="SearchAsync">
+        <span class="material-symbols-outlined text-sm">search</span> Search
+    </button>
+</div>
+
+<div class="bg-[#111621] border border-[#344465] p-4 mb-4">
+    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Batch Number</label>
+    <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" placeholder="Enter batch number" @bind="_batchNumber" />
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="p-4 text-red-400 text-xs border border-[#344465] bg-[#111621]/60 mb-4">@_error</div>
+}
+
+@if (_results != null)
+{
+    <div class="bg-[#111621] border border-[#344465] p-4">
+        <div class="text-xs font-bold uppercase tracking-wider text-slate-200 mb-3">Results (@_results.Count)</div>
+        @if (_results.Count == 0)
+        {
+            <div class="text-slate-500 text-sm">No batches found.</div>
+        }
+        else
+        {
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                <tr class="text-slate-500 border-b border-[#344465]">
+                    <th class="py-2 pr-2">Batch</th>
+                    <th class="py-2 pr-2">Vendor</th>
+                    <th class="py-2 pr-2">GRN Invoice</th>
+                    <th class="py-2 pr-2">Linked WorkOrders</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in _results)
+                {
+                    <tr class="border-b border-[#344465]/30">
+                        <td class="py-2 pr-2 font-semibold text-slate-200">@r.BatchNumber</td>
+                        <td class="py-2 pr-2 text-slate-300">@r.Vendor</td>
+                        <td class="py-2 pr-2 text-slate-300">@r.InvoiceNumber</td>
+                        <td class="py-2 pr-2 text-slate-400">@string.Join(", ", r.LinkedWorkOrders.Select(x => x.ToString()[..8]))</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private string _batchNumber = "";
+    private string? _error;
+    private List<BatchHistoryDto>? _results;
+
+    private async Task SearchAsync()
+    {
+        _error = null;
+        _results = null;
+        StateHasChanged();
+
+        if (string.IsNullOrWhiteSpace(_batchNumber))
+        {
+            _error = "Batch number is required.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            _results = (await Api.GetBatchHistoryAsync(Auth.BaseUrl, _batchNumber.Trim()))?.ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+}
+
+

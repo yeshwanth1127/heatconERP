@@ -1,9 +1,13 @@
+using HeatconERP.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace HeatconERP.Infrastructure.Migrations;
 
+[DbContext(typeof(HeatconDbContext))]
+[Migration("20260220130000_AddQuotationDescriptionAndAttachments")]
 public partial class AddQuotationDescriptionAndAttachments : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

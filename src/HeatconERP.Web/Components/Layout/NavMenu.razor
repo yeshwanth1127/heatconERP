@@ -72,10 +72,20 @@
             "FrontOffice" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail") },
             "CRMManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail"), ("Quotations", "/quotations", "request_quote"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Purchase Invoices", "/purchaseinvoices", "receipt_long"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
             "CRMStaff" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Enquiries", "/enquiries", "mail"), ("Quotations", "/quotations", "request_quote"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Purchase Invoices", "/purchaseinvoices", "receipt_long") },
-            "ProductionManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user"), ("Inventory", "/inventory", "inventory_2") },
+            "ProductionManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Received Orders", "/received-orders", "inbox"), ("Material Planner", "/material-planner", "inventory_2"), ("Quality Control", "/quality", "verified_user"), ("Inventory", "/inventory", "inventory_2") },
             "ProductionStaff" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
             "QualityCheck" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user") },
-            "DispatchStoreManager" => new[] { ("Dashboard", "/dashboard", "dashboard"), ("Purchase Orders", "/purchaseorders", "shopping_cart"), ("Work Orders", "/workorders", "assignment"), ("Production", "/production", "factory"), ("Quality Control", "/quality", "verified_user"), ("Inventory", "/inventory", "inventory_2"), ("Vendors", "/vendors", "handshake") },
+            "DispatchStoreManager" => new[]
+            {
+                ("Dashboard", "/dashboard", "dashboard"),
+                ("Stock Overview", "/stock-overview", "inventory_2"),
+                ("SRS", "/srs", "assignment"),
+                ("Issue Materials", "/issue-materials", "outbox"),
+                ("GRN", "/grn", "local_shipping"),
+                ("Vendor POs", "/vendor-pos", "receipt_long"),
+                ("Batch Traceability", "/batch-traceability", "manage_search"),
+                ("Adjustments", "/stock-adjustments", "tune")
+            },
             _ => new[] { ("Dashboard", "/dashboard", "dashboard") }
         };
         var list = new List<NavItem>();

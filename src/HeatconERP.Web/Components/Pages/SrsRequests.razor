@@ -1,0 +1,267 @@
+@page "/srs"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>SRS - HeatconERP</PageTitle>
+
+<div class="bg-[#1a2233] border border-[#344465] px-6 py-3 flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-white leading-none">SRS (Material Requests)</h1>
+        <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Store</span>
+    </div>
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+    </button>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <section class="lg:col-span-5 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-3 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm text-[#195de6]">inbox</span>
+                Pending SRS
+            </div>
+            <div class="text-[11px] text-slate-500">@_pending.Count</div>
+        </div>
+        <div class="p-3 border-b border-[#344465] bg-[#111621]/50">
+            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Search</label>
+            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                   placeholder="Work order / SRS id"
+                   @bind="_search" @bind:after="ApplyFilter" />
+        </div>
+        <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+            @if (_loading)
+            {
+                <div class="p-8 text-slate-400 text-center">Loading...</div>
+            }
+            else if (!string.IsNullOrEmpty(_listError))
+            {
+                <div class="p-4 text-red-400 text-xs border-b border-[#344465] bg-[#111621]/60">@_listError</div>
+            }
+            else if (_pendingFiltered.Count == 0)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">No pending SRS.</div>
+            }
+            else
+            {
+                <div class="p-4 space-y-3">
+                    @foreach (var s in _pendingFiltered)
+                    {
+                        var selected = _selectedId == s.Id;
+                        <button type="button"
+                                class="w-full text-left rounded-xl p-4 border transition-all
+                                       backdrop-blur-md bg-white/5 hover:bg-white/10
+                                       shadow-[0_10px_30px_-12px_rgba(0,0,0,0.75)]
+                                       @(selected ? \"border-[#195de6]/70 ring-1 ring-[#195de6]/30\" : \"border-white/10 hover:border-white/20\")"
+                                @onclick="@(() => Select(s.Id))">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-bold text-[#195de6] truncate">SRS-@s.Id.ToString()[..8]</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">WO: <span class="text-slate-200 font-semibold">@s.WorkOrderNumber</span></div>
+                                    <div class="text-[11px] text-slate-500 mt-1">@s.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600/15 text-amber-300 border border-amber-500/20">Pending</span>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <aside class="lg:col-span-7 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-3 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">assignment</span>
+                    SRS Details
+                </div>
+                @if (_detail != null)
+                {
+                    <div class="text-[11px] text-slate-400 mt-1">
+                        SRS-@_detail.Id.ToString()[..8] · WO: <span class="text-slate-200 font-semibold">@_detail.WorkOrderNumber</span>
+                    </div>
+                }
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                @if (_detail != null)
+                {
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
+                            @onclick="ApproveAndAllocateAsync"
+                            disabled="@_approving">
+                        @(_approving ? "Approving..." : "Approve + Allocate FIFO")
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-auto industrial-scrollbar p-4">
+            @if (!string.IsNullOrEmpty(_detailError))
+            {
+                <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs mb-4">@_detailError</div>
+            }
+            @if (!string.IsNullOrEmpty(_actionSuccess))
+            {
+                <div class="p-3 border border-emerald-500/20 bg-emerald-900/10 text-emerald-300 text-xs mb-4">@_actionSuccess</div>
+            }
+
+            @if (_detail == null)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">Select a pending SRS to view line items.</div>
+            }
+            else
+            {
+                <div class="bg-[#243047]/20 border border-[#344465] p-3 mb-4">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Line Items</div>
+                    @if (_detail.LineItems.Count == 0)
+                    {
+                        <div class="text-xs text-slate-500">No line items.</div>
+                    }
+                    else
+                    {
+                        <table class="w-full border-collapse text-[11px]">
+                            <thead>
+                            <tr class="text-slate-500 border-b border-[#344465]">
+                                <th class="text-left py-2 pr-2">SKU</th>
+                                <th class="text-left py-2 pr-2">Grade</th>
+                                <th class="text-left py-2 pr-2">Size</th>
+                                <th class="text-right py-2 pr-2 w-24">Req</th>
+                                <th class="text-right py-2 pr-2 w-24">Allocated</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var li in _detail.LineItems)
+                            {
+                                var allocated = li.Allocations.Sum(a => a.ReservedQuantity);
+                                <tr class="border-b border-[#344465]/30">
+                                    <td class="py-2 pr-2 text-slate-200 font-semibold">@li.Sku</td>
+                                    <td class="py-2 pr-2 text-slate-400">@li.Grade</td>
+                                    <td class="py-2 pr-2 text-slate-400">@li.Size</td>
+                                    <td class="py-2 pr-2 text-right text-slate-200 font-bold">@li.RequiredQuantity</td>
+                                    <td class="py-2 pr-2 text-right text-slate-200 font-bold">@allocated</td>
+                                </tr>
+                                @if (li.Allocations.Count > 0)
+                                {
+                                    <tr class="border-b border-[#344465]/30 bg-[#111621]/40">
+                                        <td colspan="5" class="py-2 pr-2 pl-4 text-slate-400">
+                                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Allocations</div>
+                                            <div class="space-y-1">
+                                                @foreach (var a in li.Allocations)
+                                                {
+                                                    <div class="flex items-center justify-between text-[11px]">
+                                                        <div>Batch <span class="text-slate-200 font-semibold">@a.BatchNumber</span></div>
+                                                        <div class="text-slate-200 font-bold">Reserved @a.ReservedQuantity</div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            }
+        </div>
+    </aside>
+</div>
+
+@code {
+    private bool _loading = true;
+    private string? _listError;
+    private string _search = "";
+
+    private List<SrsListDto> _pending = [];
+    private List<SrsListDto> _pendingFiltered = [];
+
+    private Guid? _selectedId;
+    private SrsDetailDto? _detail;
+    private string? _detailError;
+
+    private bool _approving;
+    private string? _actionSuccess;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        _pending = (await Api.GetSrsListAsync(Auth.BaseUrl, status: "Pending", limit: 400))?.ToList() ?? [];
+        _pendingFiltered = _pending;
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            _pendingFiltered = _pending;
+            return;
+        }
+
+        var s = _search.Trim();
+        _pendingFiltered = _pending
+            .Where(x => x.WorkOrderNumber.Contains(s, StringComparison.OrdinalIgnoreCase)
+                        || x.Id.ToString().Contains(s, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private async Task Select(Guid id)
+    {
+        _selectedId = id;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        _detail = await Api.GetSrsByIdAsync(Auth.BaseUrl, id);
+        if (_detail == null) _detailError = "Failed to load SRS details.";
+        StateHasChanged();
+    }
+
+    private async Task ApproveAndAllocateAsync()
+    {
+        if (_detail == null) return;
+        _approving = true;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        try
+        {
+            var (ok, err) = await Api.ApproveSrsAsync(Auth.BaseUrl, _detail.Id, Auth.CurrentUser?.Username);
+            if (!ok)
+            {
+                _detailError = err ?? "Failed to approve SRS.";
+                return;
+            }
+
+            var (allocOk, allocErr) = await Api.AllocateSrsFifoAsync(Auth.BaseUrl, _detail.Id);
+            if (!allocOk)
+            {
+                _detailError = allocErr ?? "Failed to allocate FIFO.";
+                return;
+            }
+
+            _actionSuccess = "Approved and FIFO allocation completed.";
+            await LoadAsync();
+            await Select(_detail.Id);
+        }
+        finally
+        {
+            _approving = false;
+            StateHasChanged();
+        }
+    }
+}
+
+

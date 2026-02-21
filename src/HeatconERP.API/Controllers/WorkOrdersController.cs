@@ -16,9 +16,11 @@ public class WorkOrdersController : ControllerBase
     public WorkOrdersController(HeatconDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<WorkOrderListDto>>> Get(
+    public async Task<ActionResult<IReadOnlyList<WorkOrderCardDto>>> Get(
         [FromQuery] string? status,
         [FromQuery] string? assignedTo,
+        [FromQuery] bool? sentToProduction,
+        [FromQuery] bool? productionReceived,
         [FromQuery] int limit = 200,
         CancellationToken ct = default)
     {
@@ -30,21 +32,38 @@ public class WorkOrdersController : ControllerBase
                 query = query.Where(w => w.Status == status);
             if (!string.IsNullOrWhiteSpace(assignedTo))
                 query = query.Where(w => w.AssignedToUserName != null && w.AssignedToUserName.Contains(assignedTo));
+            if (sentToProduction.HasValue)
+                query = sentToProduction.Value ? query.Where(w => w.SentToProductionAt != null) : query.Where(w => w.SentToProductionAt == null);
+            if (productionReceived.HasValue)
+                query = productionReceived.Value ? query.Where(w => w.ProductionReceivedAt != null) : query.Where(w => w.ProductionReceivedAt == null);
 
             var items = await query
+                .Include(w => w.PurchaseInvoice)
+                .Include(w => w.LineItems)
                 .OrderByDescending(w => w.CreatedAt)
                 .Take(limit)
-                .Select(w => new WorkOrderListDto(
-                    w.Id,
-                    w.OrderNumber,
-                    w.Stage.ToString(),
-                    w.Status,
-                    w.AssignedToUserName,
-                    w.CreatedAt,
-                    w.PurchaseInvoiceId))
                 .ToListAsync(ct);
 
-            return Ok(items);
+            var dto = items.Select(w => new WorkOrderCardDto(
+                w.Id,
+                w.OrderNumber,
+                w.Stage.ToString(),
+                w.Status,
+                w.AssignedToUserName,
+                w.CreatedAt,
+                w.PurchaseInvoiceId,
+                w.PurchaseInvoice?.InvoiceNumber,
+                w.SentToProductionAt,
+                w.SentToProductionBy,
+                w.ProductionReceivedAt,
+                w.ProductionReceivedBy,
+                w.LineItems
+                    .OrderBy(li => li.SortOrder)
+                    .Select(li => new WorkOrderCardLineItemDto(li.PartNumber, li.Description, li.Quantity))
+                    .ToList()
+            )).ToList();
+
+            return Ok(dto);
         }
         catch (PostgresException ex) when (ex.SqlState is "42703" or "42P01")
         {
@@ -108,8 +127,73 @@ public class WorkOrdersController : ControllerBase
         }
     }
 
+    [HttpPost("{id:guid}/send-to-production")]
+    public async Task<ActionResult> SendToProduction(Guid id, [FromQuery] string? sentBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var wo = await _db.WorkOrders.FirstOrDefaultAsync(w => w.Id == id, ct);
+            if (wo == null) return NotFound();
+
+            if (wo.SentToProductionAt != null)
+                return Ok(new { alreadySent = true, wo.OrderNumber, wo.SentToProductionAt, wo.SentToProductionBy });
+
+            wo.SentToProductionAt = DateTime.UtcNow;
+            wo.SentToProductionBy = string.IsNullOrWhiteSpace(sentBy) ? "System" : sentBy.Trim();
+
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Id = Guid.NewGuid(),
+                OccurredAt = DateTime.UtcNow,
+                Tag = "AUDIT",
+                Message = $"Work order {wo.OrderNumber} sent to production by {wo.SentToProductionBy}"
+            });
+
+            await _db.SaveChangesAsync(ct);
+            return Ok(new { sent = true, wo.OrderNumber, wo.SentToProductionAt, wo.SentToProductionBy });
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42703" or "42P01")
+        {
+            return StatusCode(500,
+                "Database schema for Work Orders is not up to date. Run `scripts/apply-all-migrations.ps1` and restart the API.");
+        }
+    }
+
+    [HttpPost("{id:guid}/receive-by-production")]
+    public async Task<ActionResult> ReceiveByProduction(Guid id, [FromQuery] string? receivedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var wo = await _db.WorkOrders.FirstOrDefaultAsync(w => w.Id == id, ct);
+            if (wo == null) return NotFound();
+            if (wo.SentToProductionAt == null) return BadRequest("Work order has not been sent to production.");
+
+            if (wo.ProductionReceivedAt != null)
+                return Ok(new { alreadyReceived = true, wo.OrderNumber, wo.ProductionReceivedAt, wo.ProductionReceivedBy });
+
+            wo.ProductionReceivedAt = DateTime.UtcNow;
+            wo.ProductionReceivedBy = string.IsNullOrWhiteSpace(receivedBy) ? "System" : receivedBy.Trim();
+
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Id = Guid.NewGuid(),
+                OccurredAt = DateTime.UtcNow,
+                Tag = "AUDIT",
+                Message = $"Work order {wo.OrderNumber} received by production ({wo.ProductionReceivedBy})"
+            });
+
+            await _db.SaveChangesAsync(ct);
+            return Ok(new { received = true, wo.OrderNumber, wo.ProductionReceivedAt, wo.ProductionReceivedBy });
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42703" or "42P01")
+        {
+            return StatusCode(500,
+                "Database schema for Work Orders is not up to date. Run `scripts/apply-all-migrations.ps1` and restart the API.");
+        }
+    }
+
     [HttpPost("from-invoice/{purchaseInvoiceId:guid}")]
-    public async Task<ActionResult<WorkOrderListDto>> CreateFromInvoice(Guid purchaseInvoiceId, [FromQuery] string? createdBy, CancellationToken ct = default)
+    public async Task<ActionResult<WorkOrderCardDto>> CreateFromInvoice(Guid purchaseInvoiceId, [FromQuery] string? createdBy, CancellationToken ct = default)
     {
         try
         {
@@ -123,7 +207,7 @@ public class WorkOrdersController : ControllerBase
 
             var existing = await _db.WorkOrders.AsNoTracking().FirstOrDefaultAsync(w => w.PurchaseInvoiceId == purchaseInvoiceId, ct);
             if (existing != null)
-                return Ok(new WorkOrderListDto(existing.Id, existing.OrderNumber, existing.Stage.ToString(), existing.Status, existing.AssignedToUserName, existing.CreatedAt, existing.PurchaseInvoiceId));
+                return Ok(new WorkOrderCardDto(existing.Id, existing.OrderNumber, existing.Stage.ToString(), existing.Status, existing.AssignedToUserName, existing.CreatedAt, existing.PurchaseInvoiceId, inv.InvoiceNumber, existing.SentToProductionAt, existing.SentToProductionBy, existing.ProductionReceivedAt, existing.ProductionReceivedBy, []));
 
             var year = DateTime.UtcNow.Year;
             var count = await _db.WorkOrders.CountAsync(w => w.CreatedAt.Year == year, ct);
@@ -163,6 +247,7 @@ public class WorkOrdersController : ControllerBase
                 }).ToList();
 
             var sort = 0;
+            var cardLines = new List<WorkOrderCardLineItemDto>();
             foreach (var s in sourceLines)
             {
                 _db.WorkOrderLineItems.Add(new WorkOrderLineItem
@@ -177,6 +262,8 @@ public class WorkOrdersController : ControllerBase
                     TaxPercent = s.TaxPercent,
                     LineTotal = s.LineTotal
                 });
+
+                cardLines.Add(new WorkOrderCardLineItemDto(s.PartNumber ?? "", s.Description ?? "", s.Quantity));
             }
 
             _db.ActivityLogs.Add(new ActivityLog
@@ -189,7 +276,20 @@ public class WorkOrdersController : ControllerBase
 
             await _db.SaveChangesAsync(ct);
 
-            return CreatedAtAction(nameof(GetById), new { id = wo.Id }, new WorkOrderListDto(wo.Id, wo.OrderNumber, wo.Stage.ToString(), wo.Status, wo.AssignedToUserName, wo.CreatedAt, wo.PurchaseInvoiceId));
+            return CreatedAtAction(nameof(GetById), new { id = wo.Id }, new WorkOrderCardDto(
+                wo.Id,
+                wo.OrderNumber,
+                wo.Stage.ToString(),
+                wo.Status,
+                wo.AssignedToUserName,
+                wo.CreatedAt,
+                wo.PurchaseInvoiceId,
+                inv.InvoiceNumber,
+                wo.SentToProductionAt,
+                wo.SentToProductionBy,
+                wo.ProductionReceivedAt,
+                wo.ProductionReceivedBy,
+                cardLines));
         }
         catch (PostgresException ex) when (ex.SqlState == "42703" && ex.MessageText.Contains("PurchaseInvoiceId", StringComparison.OrdinalIgnoreCase))
         {
@@ -209,14 +309,25 @@ public class WorkOrdersController : ControllerBase
     }
 }
 
-public record WorkOrderListDto(
+public record WorkOrderCardDto(
     Guid Id,
     string OrderNumber,
     string Stage,
     string Status,
     string? AssignedToUserName,
     DateTime CreatedAt,
-    Guid? PurchaseInvoiceId);
+    Guid? PurchaseInvoiceId,
+    string? PurchaseInvoiceNumber,
+    DateTime? SentToProductionAt,
+    string? SentToProductionBy,
+    DateTime? ProductionReceivedAt,
+    string? ProductionReceivedBy,
+    IReadOnlyList<WorkOrderCardLineItemDto> LineItems);
+
+public record WorkOrderCardLineItemDto(
+    string PartNumber,
+    string Description,
+    int Quantity);
 
 public record WorkOrderDetailDto(
     Guid Id,

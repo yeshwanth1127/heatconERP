@@ -421,7 +421,7 @@ public class ApiClient
         catch { return false; }
     }
 
-    public async Task<(WorkOrderListDto? WorkOrder, string? Error)> CreateWorkOrderFromInvoiceAsync(string baseUrl, Guid purchaseInvoiceId, string? createdBy, CancellationToken ct = default)
+    public async Task<(WorkOrderCardDto? WorkOrder, string? Error)> CreateWorkOrderFromInvoiceAsync(string baseUrl, Guid purchaseInvoiceId, string? createdBy, CancellationToken ct = default)
     {
         try
         {
@@ -439,7 +439,7 @@ public class ApiClient
                 return (null, msg);
             }
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var dto = await response.Content.ReadFromJsonAsync<WorkOrderListDto>(opts, ct);
+            var dto = await response.Content.ReadFromJsonAsync<WorkOrderCardDto>(opts, ct);
             return dto == null ? (null, "Failed to read work order response.") : (dto, null);
         }
         catch (Exception ex)
@@ -460,31 +460,49 @@ public class ApiClient
         catch { return null; }
     }
 
-    public async Task<IReadOnlyList<WorkOrderListDto>?> GetWorkOrdersAsync(string baseUrl, string? status = null, string? assignedTo = null, int limit = 200, CancellationToken ct = default)
+    public async Task<IReadOnlyList<WorkOrderCardDto>?> GetWorkOrdersAsync(
+        string baseUrl,
+        string? status = null,
+        string? assignedTo = null,
+        bool? sentToProduction = null,
+        bool? productionReceived = null,
+        int limit = 200,
+        CancellationToken ct = default)
     {
         try
         {
             var q = new List<string>();
             if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
             if (!string.IsNullOrWhiteSpace(assignedTo)) q.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+            if (sentToProduction.HasValue) q.Add($"sentToProduction={sentToProduction.Value.ToString().ToLowerInvariant()}");
+            if (productionReceived.HasValue) q.Add($"productionReceived={productionReceived.Value.ToString().ToLowerInvariant()}");
             q.Add($"limit={limit}");
             var path = "/api/workorders?" + string.Join("&", q);
 
             var response = await _http.GetAsync(Url(baseUrl, path), ct);
             if (!response.IsSuccessStatusCode) return null;
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            return await response.Content.ReadFromJsonAsync<List<WorkOrderListDto>>(opts, ct) ?? [];
+            return await response.Content.ReadFromJsonAsync<List<WorkOrderCardDto>>(opts, ct) ?? [];
         }
         catch { return null; }
     }
 
-    public async Task<(IReadOnlyList<WorkOrderListDto>? WorkOrders, string? Error)> GetWorkOrdersWithErrorAsync(string baseUrl, string? status = null, string? assignedTo = null, int limit = 200, CancellationToken ct = default)
+    public async Task<(IReadOnlyList<WorkOrderCardDto>? WorkOrders, string? Error)> GetWorkOrdersWithErrorAsync(
+        string baseUrl,
+        string? status = null,
+        string? assignedTo = null,
+        bool? sentToProduction = null,
+        bool? productionReceived = null,
+        int limit = 200,
+        CancellationToken ct = default)
     {
         try
         {
             var q = new List<string>();
             if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
             if (!string.IsNullOrWhiteSpace(assignedTo)) q.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+            if (sentToProduction.HasValue) q.Add($"sentToProduction={sentToProduction.Value.ToString().ToLowerInvariant()}");
+            if (productionReceived.HasValue) q.Add($"productionReceived={productionReceived.Value.ToString().ToLowerInvariant()}");
             q.Add($"limit={limit}");
             var path = "/api/workorders?" + string.Join("&", q);
 
@@ -493,7 +511,7 @@ public class ApiClient
                 return (null, await ReadErrorAsync(response, ct));
 
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var dto = await response.Content.ReadFromJsonAsync<List<WorkOrderListDto>>(opts, ct) ?? [];
+            var dto = await response.Content.ReadFromJsonAsync<List<WorkOrderCardDto>>(opts, ct) ?? [];
             return (dto, null);
         }
         catch (Exception ex)
@@ -542,6 +560,256 @@ public class ApiClient
             return response.IsSuccessStatusCode;
         }
         catch { return false; }
+    }
+
+    public async Task<(bool Ok, string? Error)> SendWorkOrderToProductionAsync(string baseUrl, Guid id, string? sentBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(sentBy)
+                ? $"/api/workorders/{id}/send-to-production"
+                : $"/api/workorders/{id}/send-to-production?sentBy={Uri.EscapeDataString(sentBy)}";
+
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> ReceiveWorkOrderByProductionAsync(string baseUrl, Guid id, string? receivedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(receivedBy)
+                ? $"/api/workorders/{id}/receive-by-production"
+                : $"/api/workorders/{id}/receive-by-production?receivedBy={Uri.EscapeDataString(receivedBy)}";
+
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<InventorySummaryDto?> GetInventorySummaryAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/inventory/inventory-summary"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<InventorySummaryDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<BatchHistoryDto>?> GetBatchHistoryAsync(string baseUrl, string batchNumber, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/inventory/batch-history/{Uri.EscapeDataString(batchNumber)}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<BatchHistoryDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<MaterialCategoryDto>?> GetMaterialCategoriesAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/material/categories"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<MaterialCategoryDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<MaterialVariantDto>?> GetMaterialVariantsAsync(string baseUrl, Guid? categoryId = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = categoryId.HasValue ? $"/api/material/variants?categoryId={categoryId.Value}" : "/api/material/variants";
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<MaterialVariantDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<VariantStockSummaryDto?> GetVariantStockSummaryAsync(string baseUrl, Guid materialVariantId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/inventory/summary/{materialVariantId}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<VariantStockSummaryDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(MaterialCategoryDto? Category, string? Error)> CreateMaterialCategoryAsync(string baseUrl, string name, string? description, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new { name, description });
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/material/categories"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<MaterialCategoryDto>(opts, ct);
+            return dto == null ? (null, "Failed to read category response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<(MaterialVariantDto? Variant, string? Error)> CreateMaterialVariantAsync(
+        string baseUrl,
+        Guid materialCategoryId,
+        string? grade,
+        string? size,
+        string unit,
+        string sku,
+        decimal minimumStockLevel,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new
+            {
+                materialCategoryId,
+                grade,
+                size,
+                unit,
+                sku,
+                minimumStockLevel
+            });
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/material/variants"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<MaterialVariantDto>(opts, ct);
+            return dto == null ? (null, "Failed to read variant response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<MaterialTypeNodeDto>?> GetInventoryMaterialTreeAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/inventory/material-tree"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<MaterialTypeNodeDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<(SrsDto? Srs, string? Error)> CreateSrsAsync(string baseUrl, CreateSrsRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/srs"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<SrsDto>(opts, ct);
+            return dto == null ? (null, "Failed to read SRS response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<SrsListDto>?> GetSrsListAsync(string baseUrl, string? status = null, Guid? workOrderId = null, int limit = 200, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string>();
+            if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (workOrderId.HasValue) q.Add($"workOrderId={workOrderId.Value}");
+            q.Add($"limit={limit}");
+            var path = "/api/srs?" + string.Join("&", q);
+
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<SrsListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<SrsDetailDto?> GetSrsByIdAsync(string baseUrl, Guid srsId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/srs/{srsId}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<SrsDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(bool Ok, string? Error)> ApproveSrsAsync(string baseUrl, Guid srsId, string? approvedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(approvedBy)
+                ? $"/api/srs/{srsId}/approve"
+                : $"/api/srs/{srsId}/approve?approvedBy={Uri.EscapeDataString(approvedBy)}";
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> AllocateSrsFifoAsync(string baseUrl, Guid srsId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/srs/{srsId}/allocate-fifo"), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
     }
 }
 

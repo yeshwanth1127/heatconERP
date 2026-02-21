@@ -1,4 +1,6 @@
 using System;
+using HeatconERP.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,6 +8,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace HeatconERP.Infrastructure.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(HeatconDbContext))]
+    [Migration("20260221100000_AddPurchaseOrderQuotationAndLineItems")]
     public partial class AddPurchaseOrderQuotationAndLineItems : Migration
     {
         /// <inheritdoc />

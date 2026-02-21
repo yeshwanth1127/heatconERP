@@ -14,103 +14,285 @@
 }
 else
 {
-    var kpis = _data?.Kpis ?? [];
-    var chartData = _data?.Chart ?? new ChartDto(0, "Items", [new ChartBarDto("Total", 0, 100)]);
-    var activities = _data?.Activities ?? [];
-    var approvals = _data?.Approvals ?? [];
-
-    <!-- KPI Section -->
-    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-        @foreach (var kpi in kpis)
-        {
-            <div class="bg-[#243047]/50 border border-[#344465] p-4 group hover:border-[#195de6] transition-colors cursor-default">
-                <div class="flex justify-between items-start mb-2">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">@kpi.Title</span>
-                    <span class="material-symbols-outlined @kpi.IconColor text-lg">@kpi.Icon</span>
+    var role = Auth.CurrentUser?.Role ?? "";
+    if (role == "ProductionManager")
+    {
+        <div class="bg-[#1a2233] border border-[#344465] mb-6">
+            <div class="px-6 py-4 border-b border-[#344465] flex items-center justify-between gap-4">
+                <div>
+                    <div class="text-xs text-slate-400 uppercase tracking-widest font-bold">Production Manager</div>
+                    <div class="text-xl font-bold text-white leading-none mt-1">Analytics Dashboard</div>
                 </div>
-                <div class="flex items-end gap-2">
-                    <span class="text-2xl font-bold @kpi.ValueColor leading-none">@kpi.Value</span>
-                    <span class="text-[10px] @kpi.ChangeColor font-bold leading-none mb-1">@kpi.Change</span>
-                </div>
+                <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-2 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="RefreshAsync">
+                    <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                </button>
             </div>
-        }
-    </div>
+        </div>
 
-    <!-- Main Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- Left: Chart -->
-        <div class="lg:col-span-8 bg-[#243047]/20 border border-[#344465] flex flex-col">
-            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm">bar_chart</span>
-                    @GetChartTitle()
-                </h3>
-                <div class="flex gap-2">
-                    <button class="text-[10px] font-bold px-2 py-1 bg-[#195de6] text-white uppercase tracking-tighter">Current</button>
-                    <button class="text-[10px] font-bold px-2 py-1 bg-[#243047] text-slate-400 uppercase tracking-tighter border border-[#344465]">Weekly</button>
-                </div>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">New Received Orders</div>
+                <div class="text-3xl font-light text-white">@_pmNewCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Sent from CRM, awaiting acceptance</div>
             </div>
-            <div class="flex-1 p-6">
-                <div class="flex flex-col gap-2 mb-4">
-                    <span class="text-3xl font-light text-slate-100 leading-none">@chartData.Total <small class="text-xs font-medium uppercase text-slate-500">@chartData.UnitLabel</small></span>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Accepted</div>
+                <div class="text-3xl font-light text-white">@_pmAcceptedCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Acknowledged by production</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">All Sent</div>
+                <div class="text-3xl font-light text-white">@_pmAllSentCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Total dispatches from CRM</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Active Work Orders</div>
+                <div class="text-3xl font-light text-white">@_pmActiveProductionCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">From production module (active)</div>
+            </div>
+        </div>
+
+        var chartData = _data?.Chart ?? new ChartDto(0, "Items", [new ChartBarDto("Total", 0, 100)]);
+        var activities = _data?.Activities ?? [];
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-8 bg-[#243047]/20 border border-[#344465] flex flex-col">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">bar_chart</span>
+                        Work Order Status Summary
+                    </h3>
                 </div>
-                <div class="h-64 flex items-end justify-between gap-4 border-b border-l border-[#344465] pt-4 px-4">
-                    @foreach (var bar in chartData.Bars)
-                    {
-                        <div class="flex flex-col items-center flex-1 group">
-                            <div class="w-full bg-[#195de6]/30 border-t border-[#195de6]/50 flex flex-col justify-end group-hover:bg-[#195de6]/40 transition-all" style="height: @(bar.Height)%">
-                                <span class="text-[10px] text-center mb-1 text-slate-200 font-bold">@bar.Value</span>
+                <div class="flex-1 p-6">
+                    <div class="flex flex-col gap-2 mb-4">
+                        <span class="text-3xl font-light text-slate-100 leading-none">@chartData.Total <small class="text-xs font-medium uppercase text-slate-500">@chartData.UnitLabel</small></span>
+                    </div>
+                    <div class="h-64 flex items-end justify-between gap-4 border-b border-l border-[#344465] pt-4 px-4">
+                        @foreach (var bar in chartData.Bars)
+                        {
+                            <div class="flex flex-col items-center flex-1 group">
+                                <div class="w-full bg-[#195de6]/30 border-t border-[#195de6]/50 flex flex-col justify-end group-hover:bg-[#195de6]/40 transition-all" style="height: @(bar.Height)%">
+                                    <span class="text-[10px] text-center mb-1 text-slate-200 font-bold">@bar.Value</span>
+                                </div>
+                                <span class="text-[10px] font-medium text-slate-400 uppercase mt-2 tracking-tighter">@bar.Label</span>
                             </div>
-                            <span class="text-[10px] font-medium text-slate-400 uppercase mt-2 tracking-tighter">@bar.Label</span>
-                        </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-4 bg-[#111621] border border-[#344465] flex flex-col">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/40">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
+                        Activity Log
+                    </h3>
+                    <span class="material-symbols-outlined text-slate-500 text-sm hover:text-white cursor-pointer" @onclick="RefreshAsync">refresh</span>
+                </div>
+                <div class="flex-1 overflow-y-auto industrial-scrollbar bg-[#0a0f18] font-mono text-[11px]">
+                    @if (activities.Count == 0)
+                    {
+                        <div class="p-3 text-slate-500">No activity yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var entry in activities)
+                        {
+                            <div class="p-3 border-b border-[#344465]/30 hover:bg-[#243047]/10 transition-colors @entry.BgClass">
+                                <div class="flex gap-2 @entry.TagColor mb-1">
+                                    <span class="font-bold">[@entry.Time]</span>
+                                    <span class="uppercase tracking-widest text-[9px] @entry.TagClass px-1 border @entry.TagBorder">@entry.Tag</span>
+                                </div>
+                                <div class="@entry.TextClass">@((MarkupString)entry.Message)</div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else if (role == "DispatchStoreManager")
+    {
+        <div class="bg-[#1a2233] border border-[#344465] mb-6">
+            <div class="px-6 py-4 border-b border-[#344465] flex items-center justify-between gap-4">
+                <div>
+                    <div class="text-xs text-slate-400 uppercase tracking-widest font-bold">Store Manager</div>
+                    <div class="text-xl font-bold text-white leading-none mt-1">Operations Overview</div>
+                </div>
+                <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-2 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="RefreshAsync">
+                    <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Low Stock Items</div>
+                <div class="text-3xl font-light text-white">@_storeLowStockCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Placeholder (needs variant-level endpoint)</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Pending SRS</div>
+                <div class="text-3xl font-light text-white">@_storePendingSrsCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Placeholder (SRS list endpoint next)</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Incoming Materials</div>
+                <div class="text-3xl font-light text-white">@(_storeInventory?.IncomingOrderedQuantity ?? 0)</div>
+                <div class="text-[11px] text-slate-500 mt-1">Ordered, not yet received</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Today’s GRNs</div>
+                <div class="text-3xl font-light text-white">@_storeTodaysGrnCount</div>
+                <div class="text-[11px] text-slate-500 mt-1">Placeholder (GRN list endpoint next)</div>
+            </div>
+            <div class="bg-[#243047]/25 border border-[#344465] p-4">
+                <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Stock Summary</div>
+                <div class="text-[11px] text-slate-400 mt-1">Avail: <span class="text-slate-200 font-semibold">@(_storeInventory?.TotalAvailable ?? 0)</span></div>
+                <div class="text-[11px] text-slate-400 mt-1">Resv: <span class="text-slate-200 font-semibold">@(_storeInventory?.TotalReserved ?? 0)</span></div>
+                <div class="text-[11px] text-slate-400 mt-1">Cons: <span class="text-slate-200 font-semibold">@(_storeInventory?.TotalConsumed ?? 0)</span></div>
+            </div>
+        </div>
+
+        var activities = _data?.Activities ?? [];
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-7 bg-[#243047]/20 border border-[#344465] p-4">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2 mb-3">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">inventory_2</span>
+                    Today Snapshot
+                </div>
+                <div class="text-[11px] text-slate-500">
+                    Use <span class="text-slate-200 font-semibold">Stock Overview</span>, <span class="text-slate-200 font-semibold">SRS</span>, and <span class="text-slate-200 font-semibold">GRN</span> from the left panel for operations.
+                </div>
+            </div>
+            <div class="lg:col-span-5 bg-[#111621] border border-[#344465] flex flex-col overflow-hidden">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/40">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
+                        Activity Log
+                    </h3>
+                    <span class="material-symbols-outlined text-slate-500 text-sm hover:text-white cursor-pointer" @onclick="RefreshAsync">refresh</span>
+                </div>
+                <div class="flex-1 overflow-y-auto industrial-scrollbar bg-[#0a0f18] font-mono text-[11px]">
+                    @if (activities.Count == 0)
+                    {
+                        <div class="p-3 text-slate-500">No activity yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var entry in activities)
+                        {
+                            <div class="p-3 border-b border-[#344465]/30 hover:bg-[#243047]/10 transition-colors @entry.BgClass">
+                                <div class="flex gap-2 @entry.TagColor mb-1">
+                                    <span class="font-bold">[@entry.Time]</span>
+                                    <span class="uppercase tracking-widest text-[9px] @entry.TagClass px-1 border @entry.TagBorder">@entry.Tag</span>
+                                </div>
+                                <div class="@entry.TextClass">@((MarkupString)entry.Message)</div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        var kpis = _data?.Kpis ?? [];
+        var chartData = _data?.Chart ?? new ChartDto(0, "Items", [new ChartBarDto("Total", 0, 100)]);
+        var activities = _data?.Activities ?? [];
+        var approvals = _data?.Approvals ?? [];
+
+        <!-- KPI Section -->
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+            @foreach (var kpi in kpis)
+            {
+                <div class="bg-[#243047]/50 border border-[#344465] p-4 group hover:border-[#195de6] transition-colors cursor-default">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">@kpi.Title</span>
+                        <span class="material-symbols-outlined @kpi.IconColor text-lg">@kpi.Icon</span>
+                    </div>
+                    <div class="flex items-end gap-2">
+                        <span class="text-2xl font-bold @kpi.ValueColor leading-none">@kpi.Value</span>
+                        <span class="text-[10px] @kpi.ChangeColor font-bold leading-none mb-1">@kpi.Change</span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Left: Chart -->
+            <div class="lg:col-span-8 bg-[#243047]/20 border border-[#344465] flex flex-col">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">bar_chart</span>
+                        @GetChartTitle()
+                    </h3>
+                    <div class="flex gap-2">
+                        <button class="text-[10px] font-bold px-2 py-1 bg-[#195de6] text-white uppercase tracking-tighter">Current</button>
+                        <button class="text-[10px] font-bold px-2 py-1 bg-[#243047] text-slate-400 uppercase tracking-tighter border border-[#344465]">Weekly</button>
+                    </div>
+                </div>
+                <div class="flex-1 p-6">
+                    <div class="flex flex-col gap-2 mb-4">
+                        <span class="text-3xl font-light text-slate-100 leading-none">@chartData.Total <small class="text-xs font-medium uppercase text-slate-500">@chartData.UnitLabel</small></span>
+                    </div>
+                    <div class="h-64 flex items-end justify-between gap-4 border-b border-l border-[#344465] pt-4 px-4">
+                        @foreach (var bar in chartData.Bars)
+                        {
+                            <div class="flex flex-col items-center flex-1 group">
+                                <div class="w-full bg-[#195de6]/30 border-t border-[#195de6]/50 flex flex-col justify-end group-hover:bg-[#195de6]/40 transition-all" style="height: @(bar.Height)%">
+                                    <span class="text-[10px] text-center mb-1 text-slate-200 font-bold">@bar.Value</span>
+                                </div>
+                                <span class="text-[10px] font-medium text-slate-400 uppercase mt-2 tracking-tighter">@bar.Label</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Activity Log -->
+            <div class="lg:col-span-4 bg-[#111621] border border-[#344465] flex flex-col">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/40">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
+                        Activity Log
+                    </h3>
+                    <span class="material-symbols-outlined text-slate-500 text-sm hover:text-white cursor-pointer" @onclick="RefreshAsync">refresh</span>
+                </div>
+                <div class="flex-1 overflow-y-auto industrial-scrollbar bg-[#0a0f18] font-mono text-[11px]">
+                    @if (activities.Count == 0)
+                    {
+                        <div class="p-3 text-slate-500">No activity yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var entry in activities)
+                        {
+                            <div class="p-3 border-b border-[#344465]/30 hover:bg-[#243047]/10 transition-colors @entry.BgClass">
+                                <div class="flex gap-2 @entry.TagColor mb-1">
+                                    <span class="font-bold">[@entry.Time]</span>
+                                    <span class="uppercase tracking-widest text-[9px] @entry.TagClass px-1 border @entry.TagBorder">@entry.Tag</span>
+                                </div>
+                                <div class="@entry.TextClass">@((MarkupString)entry.Message)</div>
+                            </div>
+                        }
                     }
                 </div>
             </div>
         </div>
 
-        <!-- Right: Activity Log -->
-        <div class="lg:col-span-4 bg-[#111621] border border-[#344465] flex flex-col">
-            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/40">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
-                    Activity Log
-                </h3>
-                <span class="material-symbols-outlined text-slate-500 text-sm hover:text-white cursor-pointer" @onclick="RefreshAsync">refresh</span>
-            </div>
-            <div class="flex-1 overflow-y-auto industrial-scrollbar bg-[#0a0f18] font-mono text-[11px]">
-                @if (activities.Count == 0)
-                {
-                    <div class="p-3 text-slate-500">No activity yet.</div>
-                }
-                else
-                {
-                    @foreach (var entry in activities)
-                    {
-                        <div class="p-3 border-b border-[#344465]/30 hover:bg-[#243047]/10 transition-colors @entry.BgClass">
-                            <div class="flex gap-2 @entry.TagColor mb-1">
-                                <span class="font-bold">[@entry.Time]</span>
-                                <span class="uppercase tracking-widest text-[9px] @entry.TagClass px-1 border @entry.TagBorder">@entry.Tag</span>
-                            </div>
-                            <div class="@entry.TextClass">@((MarkupString)entry.Message)</div>
-                        </div>
-                    }
-                }
-            </div>
-        </div>
-    </div>
-
-    <!-- Pending Approvals Table -->
-    <div class="grid grid-cols-12 gap-6 mt-6">
-        <div class="col-span-12 bg-[#243047]/20 border border-[#344465] overflow-hidden">
-            <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm">assignment_turned_in</span>
-                    Critical Pending Approvals
-                </h3>
-                <a href="#" class="text-[10px] font-bold text-[#195de6] flex items-center gap-1 hover:underline">VIEW ALL QUEUE <span class="material-symbols-outlined text-sm">arrow_forward</span></a>
-            </div>
-            <table class="w-full text-left border-collapse">
-                <thead>
+        <!-- Pending Approvals Table -->
+        <div class="grid grid-cols-12 gap-6 mt-6">
+            <div class="col-span-12 bg-[#243047]/20 border border-[#344465] overflow-hidden">
+                <div class="p-3 border-b border-[#344465] flex justify-between items-center bg-[#243047]/30">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">assignment_turned_in</span>
+                        Critical Pending Approvals
+                    </h3>
+                    <a href="#" class="text-[10px] font-bold text-[#195de6] flex items-center gap-1 hover:underline">VIEW ALL QUEUE <span class="material-symbols-outlined text-sm">arrow_forward</span></a>
+                </div>
+                <table class="w-full text-left border-collapse">
+                    <thead>
                     <tr class="bg-[#111621]/50 border-b border-[#344465] text-[10px] uppercase font-bold text-slate-500">
                         <th class="px-4 py-3">ID #</th>
                         <th class="px-4 py-3">Module</th>
@@ -119,8 +301,8 @@ else
                         <th class="px-4 py-3">Value</th>
                         <th class="px-4 py-3 text-right">Action</th>
                     </tr>
-                </thead>
-                <tbody class="text-xs text-slate-300 font-medium">
+                    </thead>
+                    <tbody class="text-xs text-slate-300 font-medium">
                     @if (approvals.Count == 0)
                     {
                         <tr><td colspan="6" class="px-4 py-6 text-center text-slate-500">No pending approvals.</td></tr>
@@ -144,15 +326,26 @@ else
                             </tr>
                         }
                     }
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </div>
+    }
 }
 
 @code {
     private DashboardResponse? _data;
     private bool _loading = true;
+    private List<WorkOrderCardDto> _pmAllSent = [];
+    private int _pmNewCount;
+    private int _pmAcceptedCount;
+    private int _pmAllSentCount;
+    private int _pmActiveProductionCount;
+
+    private InventorySummaryDto? _storeInventory;
+    private int _storeLowStockCount;
+    private int _storePendingSrsCount;
+    private int _storeTodaysGrnCount;
 
     protected override async Task OnInitializedAsync()
     {
@@ -167,6 +360,33 @@ else
         var role = Auth.CurrentUser?.Role ?? "";
         var baseUrl = Auth.BaseUrl;
         _data = await Api.GetDashboardAsync(baseUrl, role);
+
+        if (role == "ProductionManager")
+        {
+            var (sent, _) = await Api.GetWorkOrdersWithErrorAsync(baseUrl,
+                sentToProduction: true,
+                limit: 800);
+            _pmAllSent = (sent ?? [])
+                .OrderByDescending(x => x.SentToProductionAt)
+                .ToList();
+
+            _pmNewCount = _pmAllSent.Count(x => x.ProductionReceivedAt == null);
+            _pmAcceptedCount = _pmAllSent.Count(x => x.ProductionReceivedAt != null);
+            _pmAllSentCount = _pmAllSent.Count;
+
+            var prod = await Api.GetProductionWorkOrdersAsync(baseUrl, stage: null);
+            _pmActiveProductionCount = prod?.Count ?? 0;
+        }
+        else if (role == "DispatchStoreManager")
+        {
+            _storeInventory = await Api.GetInventorySummaryAsync(baseUrl);
+
+            // Placeholders until we add dedicated endpoints:
+            _storeLowStockCount = 0;
+            _storePendingSrsCount = 0;
+            _storeTodaysGrnCount = 0;
+        }
+
         _loading = false;
         StateHasChanged();
     }

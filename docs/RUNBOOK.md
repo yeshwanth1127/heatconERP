@@ -101,6 +101,7 @@ Changes are applied without restarting the process manually.
 | prodmanager   | prod123  | Production Manager|
 | prodstaff     | prod123  | Production Staff  |
 | qualitycheck  | qc123    | Quality Check     |
+| storemanager  | store123 | Dispatch/Store Mgr |
 
 ---
 

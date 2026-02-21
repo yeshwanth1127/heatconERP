@@ -1,5 +1,10 @@
 using DotNetEnv;
+using HeatconERP.Application.Abstractions;
+using HeatconERP.Application.Services.Inventory;
+using HeatconERP.Application.Services.Procurement;
+using HeatconERP.Application.Services.Srs;
 using HeatconERP.Domain.Entities;
+using HeatconERP.Domain.Entities.Inventory;
 using HeatconERP.Domain.Enums;
 using HeatconERP.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +29,12 @@ builder.Services.AddDbContext<HeatconDbContext>(options =>
     options.UseNpgsql(connectionString);
     options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
+
+// Application services (Inventory & Procurement)
+builder.Services.AddScoped<IHeatconDbContext>(sp => sp.GetRequiredService<HeatconDbContext>());
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IProcurementService, ProcurementService>();
+builder.Services.AddScoped<ISrsService, SrsService>();
 
 var app = builder.Build();
 
@@ -52,7 +63,8 @@ using (var scope = app.Services.CreateScope())
         (Username: "crmstaff", Password: "crm123", Role: UserRole.CRMStaff),
         (Username: "prodmanager", Password: "prod123", Role: UserRole.ProductionManager),
         (Username: "prodstaff", Password: "prod123", Role: UserRole.ProductionStaff),
-        (Username: "qualitycheck", Password: "qc123", Role: UserRole.QualityCheck)
+        (Username: "qualitycheck", Password: "qc123", Role: UserRole.QualityCheck),
+        (Username: "storemanager", Password: "store123", Role: UserRole.DispatchStoreManager)
     };
     foreach (var (username, password, role) in seedUsers)
     {
@@ -149,6 +161,32 @@ using (var scope = app.Services.CreateScope())
             foreach (var wo in workOrders.Skip(5).Take(3))
                 db.QualityInspections.Add(new QualityInspection { Id = Guid.NewGuid(), WorkOrderId = wo.Id, WorkOrderNumber = wo.OrderNumber, Result = "Fail", Notes = "Dimensional tolerance exceeded", InspectedAt = DateTime.UtcNow.AddHours(-2), InspectedBy = "M.Jones" });
         } } catch { /* QualityInspections seed skipped */ }
+
+    // Inventory & Procurement: seed material hierarchy (only if empty)
+    try
+    {
+        if (!await db.MaterialCategories.AnyAsync())
+        {
+            var catSs = new MaterialCategory { Id = Guid.NewGuid(), Name = "Stainless Steel", Description = "Sheet/rod/plate variants" };
+            var catAl = new MaterialCategory { Id = Guid.NewGuid(), Name = "Aluminium", Description = "Lightweight structural variants" };
+            var catTi = new MaterialCategory { Id = Guid.NewGuid(), Name = "Titanium", Description = "Aerospace-grade variants" };
+
+            db.MaterialCategories.AddRange(catSs, catAl, catTi);
+
+            db.MaterialVariants.AddRange(
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catSs.Id, Grade = "SS304", Size = "10mm", Unit = "Kg", SKU = "SS304-10MM-KG", MinimumStockLevel = 50 },
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catSs.Id, Grade = "SS316", Size = "12mm", Unit = "Kg", SKU = "SS316-12MM-KG", MinimumStockLevel = 30 },
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catSs.Id, Grade = "SS304", Size = "2mm Sheet", Unit = "SqM", SKU = "SS304-2MM-SQM", MinimumStockLevel = 20 },
+
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catAl.Id, Grade = "AL6061", Size = "8mm", Unit = "Kg", SKU = "AL6061-8MM-KG", MinimumStockLevel = 40 },
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catAl.Id, Grade = "AL7075", Size = "6mm", Unit = "Kg", SKU = "AL7075-6MM-KG", MinimumStockLevel = 25 },
+
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catTi.Id, Grade = "TI6AL4V", Size = "5mm", Unit = "Kg", SKU = "TI6AL4V-5MM-KG", MinimumStockLevel = 15 },
+                new MaterialVariant { Id = Guid.NewGuid(), MaterialCategoryId = catTi.Id, Grade = "TI6AL4V", Size = "3mm Sheet", Unit = "SqM", SKU = "TI6AL4V-3MM-SQM", MinimumStockLevel = 10 }
+            );
+        }
+    }
+    catch { /* Inventory seed skipped */ }
     try { await db.SaveChangesAsync(); } catch { /* SaveChanges skipped */ }
 }
 

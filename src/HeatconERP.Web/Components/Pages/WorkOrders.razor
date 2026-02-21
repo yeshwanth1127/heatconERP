@@ -53,37 +53,88 @@
                                 @_listError
                             </div>
                         }
-                        <table class="w-full border-collapse text-left text-xs">
-                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10">
-                                <tr>
-                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">WO #</th>
-                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Stage</th>
-                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
-                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Assigned</th>
-                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Created</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @if (_list.Count == 0)
+                        <div class="p-4 space-y-3">
+                            @if (_list.Count == 0)
+                            {
+                                <div class="px-4 py-8 text-center text-slate-500 text-xs">No work orders found.</div>
+                            }
+                            else
+                            {
+                                @foreach (var wo in _list)
                                 {
-                                    <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No work orders found.</td></tr>
-                                }
-                                else
-                                {
-                                    @foreach (var wo in _list)
-                                    {
-                                        <tr class="border-b border-[#344465]/30 hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(wo.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent")"
+                                    var isSelected = wo.Id == _selectedId;
+                                    var lines = wo.LineItems?.ToList() ?? [];
+                                    var preview = lines.Take(4).ToList();
+                                    var remaining = Math.Max(0, lines.Count - preview.Count);
+                                    var totalQty = lines.Sum(x => x.Quantity);
+
+                                    <button type="button"
+                                            class="w-full text-left rounded-xl p-4 border transition-all
+                                                   backdrop-blur-md bg-white/5 hover:bg-white/10
+                                                   shadow-[0_10px_30px_-12px_rgba(0,0,0,0.75)]
+                                                   @(isSelected ? "border-[#195de6]/70 ring-1 ring-[#195de6]/30" : "border-white/10 hover:border-white/20")"
                                             @onclick="@(() => SelectWorkOrder(wo.Id))">
-                                            <td class="px-4 py-3 font-bold text-[#195de6]">@wo.OrderNumber</td>
-                                            <td class="px-4 py-3 text-slate-300">@wo.Stage</td>
-                                            <td class="px-4 py-3 text-slate-300">@wo.Status</td>
-                                            <td class="px-4 py-3 text-slate-300">@(wo.AssignedToUserName ?? "—")</td>
-                                            <td class="px-4 py-3 text-slate-400">@wo.CreatedAt.ToString("dd MMM yyyy")</td>
-                                        </tr>
-                                    }
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-sm font-bold text-[#195de6] truncate">@wo.OrderNumber</span>
+                                                    <span class="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-[#243047]/60 border border-white/10 text-slate-300">WO</span>
+                                                </div>
+                                                <div class="mt-1 flex flex-wrap gap-2">
+                                                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#243047]/60 border border-white/10 text-slate-300">
+                                                        Invoice: @(wo.PurchaseInvoiceNumber ?? "—")
+                                                    </span>
+                                                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#243047]/60 border border-white/10 text-slate-400">
+                                                        Total Qty: @totalQty
+                                                    </span>
+                                                    @if (wo.SentToProductionAt != null)
+                                                    {
+                                                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-600/15 border border-emerald-500/20 text-emerald-300">
+                                                            Sent to Production
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+                                            <div class="shrink-0 flex flex-col items-end gap-1">
+                                                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#195de6]/15 border border-[#195de6]/25 text-[#7fb2ff]">@wo.Stage</span>
+                                                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#243047]/60 border border-white/10 text-slate-300">@wo.Status</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 border-t border-white/10 pt-3">
+                                            @if (preview.Count == 0)
+                                            {
+                                                <div class="text-[11px] text-slate-500">No line items.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="space-y-1">
+                                                    @foreach (var li in preview)
+                                                    {
+                                                        <div class="flex items-center justify-between gap-3 text-[11px]">
+                                                            <div class="min-w-0 text-slate-300 truncate">
+                                                                <span class="font-semibold">@li.PartNumber</span>
+                                                                @if (!string.IsNullOrWhiteSpace(li.Description))
+                                                                {
+                                                                    <span class="text-slate-500"> – @li.Description</span>
+                                                                }
+                                                            </div>
+                                                            <div class="shrink-0 text-slate-200 font-bold px-2 py-0.5 rounded bg-[#243047]/60 border border-white/10">
+                                                                Qty @li.Quantity
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    @if (remaining > 0)
+                                                    {
+                                                        <div class="text-[11px] text-slate-500">+@remaining more items</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </button>
                                 }
-                            </tbody>
-                        </table>
+                            }
+                        </div>
                     }
                 </div>
             </div>
@@ -182,16 +233,18 @@
                     </div>
 
                     <div class="p-4 border-t border-[#344465] bg-[#243047]/30">
-                        @if (!string.IsNullOrEmpty(_saveError))
+                        @if (!string.IsNullOrEmpty(_sendError))
                         {
-                            <p class="text-red-400 text-xs mb-2">@_saveError</p>
+                            <p class="text-red-400 text-xs mb-2">@_sendError</p>
                         }
-                        <button class="w-full bg-[#195de6] hover:bg-[#195de6]/90 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="SaveAsync" disabled="@_saving">
-                            @if (_saving) { <span>Saving...</span> } else { <span class="material-symbols-outlined text-sm">save</span> <span>Save</span> }
+                        <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2"
+                                @onclick="SendToProductionAsync"
+                                disabled="@_sendingToProduction">
+                            @if (_sendingToProduction) { <span>Sending...</span> } else { <span class="material-symbols-outlined text-sm">send</span> <span>Send to Production Team</span> }
                         </button>
-                        @if (_saveSuccess)
+                        @if (_sendSuccess)
                         {
-                            <p class="text-emerald-400 text-xs mt-2 text-center">Saved successfully.</p>
+                            <p class="text-emerald-400 text-xs mt-2 text-center">Sent to production.</p>
                         }
                     </div>
                 }
@@ -204,7 +257,7 @@
     [SupplyParameterFromQuery(Name = "id")]
     private Guid? QueryId { get; set; }
 
-    private List<WorkOrderListDto> _list = [];
+    private List<WorkOrderCardDto> _list = [];
     private WorkOrderDetailDto? _selectedDetail;
     private Guid? _selectedId;
     private bool _loading = true;
@@ -214,9 +267,10 @@
     private string? _listError;
 
     private bool _saving;
-    private bool _saveSuccess;
-    private string? _saveError;
+    private bool _sendSuccess;
+    private string? _sendError;
     private string? _detailError;
+    private bool _sendingToProduction;
 
     private string _editStage = "Planning";
     private string _editStatus = "Active";
@@ -252,6 +306,8 @@
         var (items, err) = await Api.GetWorkOrdersWithErrorAsync(Auth.BaseUrl,
             status: string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus,
             assignedTo: string.IsNullOrWhiteSpace(_filterAssignedTo) ? null : _filterAssignedTo,
+            sentToProduction: null,
+            productionReceived: null,
             limit: 500);
         _list = items?.ToList() ?? [];
         _listError = err;
@@ -290,29 +346,41 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task SaveAsync()
+    private async Task SendToProductionAsync()
     {
         if (_selectedDetail == null) return;
-        _saving = true;
-        _saveSuccess = false;
-        _saveError = null;
+        _sendingToProduction = true;
+        _sendSuccess = false;
+        _sendError = null;
         StateHasChanged();
 
+        // First persist the current edits on the work order
         var req = new UpdateWorkOrderRequest(_editStage, _editStatus, _editAssignedTo);
         var ok = await Api.UpdateWorkOrderAsync(Auth.BaseUrl, _selectedDetail.Id, req);
-        _saving = false;
-
         if (!ok)
         {
-            _saveError = "Failed to save work order.";
+            _sendError = "Failed to save work order before sending.";
+            _sendingToProduction = false;
             StateHasChanged();
             return;
         }
 
-        _saveSuccess = true;
+        // Then dispatch to production
+        var (sentOk, sentErr) = await Api.SendWorkOrderToProductionAsync(Auth.BaseUrl, _selectedDetail.Id, Auth.CurrentUser?.Username);
+        _sendingToProduction = false;
+
+        if (!sentOk)
+        {
+            _sendError = sentErr ?? "Failed to send to production.";
+            StateHasChanged();
+            return;
+        }
+
+        _sendSuccess = true;
         await LoadAsync();
         StateHasChanged();
     }
 
     private static string FormatInr(decimal value) => "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
 }
+

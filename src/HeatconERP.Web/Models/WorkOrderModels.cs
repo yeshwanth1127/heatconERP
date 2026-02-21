@@ -1,13 +1,24 @@
 namespace HeatconERP.Web.Models;
 
-public record WorkOrderListDto(
+public record WorkOrderCardDto(
     Guid Id,
     string OrderNumber,
     string Stage,
     string Status,
     string? AssignedToUserName,
     DateTime CreatedAt,
-    Guid? PurchaseInvoiceId);
+    Guid? PurchaseInvoiceId,
+    string? PurchaseInvoiceNumber,
+    DateTime? SentToProductionAt,
+    string? SentToProductionBy,
+    DateTime? ProductionReceivedAt,
+    string? ProductionReceivedBy,
+    IReadOnlyList<WorkOrderCardLineItemDto> LineItems);
+
+public record WorkOrderCardLineItemDto(
+    string PartNumber,
+    string Description,
+    int Quantity);
 
 public record WorkOrderDetailDto(
     Guid Id,

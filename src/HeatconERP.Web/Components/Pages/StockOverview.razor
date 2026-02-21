@@ -1,0 +1,479 @@
+@page "/stock-overview"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Stock Overview - HeatconERP</PageTitle>
+
+<div class="bg-[#1a2233] border border-[#344465] px-6 py-3 flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-white leading-none">Stock Overview</h1>
+        <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Inventory</span>
+    </div>
+    <div class="flex items-center gap-2">
+        <button class="bg-[#195de6] hover:bg-[#195de6]/90 text-white py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="OpenAddMaterial">
+            <span class="material-symbols-outlined text-sm">add</span> Add Material
+        </button>
+        <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+        </button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="p-8 text-slate-400">Loading...</div>
+}
+else
+{
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div class="bg-[#243047]/25 border border-[#344465] p-4">
+            <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Available</div>
+            <div class="text-2xl font-light text-white">@(_summary?.TotalAvailable ?? 0)</div>
+        </div>
+        <div class="bg-[#243047]/25 border border-[#344465] p-4">
+            <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Reserved</div>
+            <div class="text-2xl font-light text-white">@(_summary?.TotalReserved ?? 0)</div>
+        </div>
+        <div class="bg-[#243047]/25 border border-[#344465] p-4">
+            <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Consumed</div>
+            <div class="text-2xl font-light text-white">@(_summary?.TotalConsumed ?? 0)</div>
+        </div>
+        <div class="bg-[#243047]/25 border border-[#344465] p-4">
+            <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Received</div>
+            <div class="text-2xl font-light text-white">@(_summary?.TotalReceived ?? 0)</div>
+        </div>
+        <div class="bg-[#243047]/25 border border-[#344465] p-4">
+            <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Incoming (Ordered)</div>
+            <div class="text-2xl font-light text-white">@(_summary?.IncomingOrderedQuantity ?? 0)</div>
+        </div>
+    </div>
+
+    <div class="bg-[#111621] border border-[#344465] p-4 mb-6">
+        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Search materials</label>
+        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" placeholder="Category / SKU / grade / size" @bind="_search" @bind:after="ApplyFilter" />
+        <div class="text-[11px] text-slate-500 mt-2">
+            This view shows the material hierarchy (Category → Variants). Stock totals stay 0 until GRNs create batches.
+        </div>
+    </div>
+
+    @if (_categories.Count == 0)
+    {
+        <div class="bg-[#111621] border border-[#344465] p-6 text-slate-500">No materials found.</div>
+    }
+    else
+    {
+        <div class="space-y-4">
+            @foreach (var c in _categoriesFiltered)
+            {
+                var varsInCat = _variantsFiltered.Where(v => v.MaterialCategoryId == c.Id).ToList();
+                if (varsInCat.Count == 0) continue;
+
+                <div class="bg-[#111621] border border-[#344465] overflow-hidden">
+                    <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <div class="text-sm font-bold text-slate-100">@c.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(c.Description))
+                            {
+                                <div class="text-[11px] text-slate-500 mt-1 truncate">@c.Description</div>
+                            }
+                        </div>
+                        <div class="shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-[#243047]/60 border border-white/10 text-slate-300">
+                            @varsInCat.Count variants
+                        </div>
+                    </div>
+
+                    <div class="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        @foreach (var v in varsInCat)
+                        {
+                            var sum = _variantSummaries.GetValueOrDefault(v.Id);
+                            var avail = sum?.TotalAvailable ?? 0;
+                            var resv = sum?.TotalReserved ?? 0;
+                            var cons = sum?.TotalConsumed ?? 0;
+                            var recv = sum?.TotalReceived ?? 0;
+                            var status = avail <= 0 ? "Out" : avail < v.MinimumStockLevel ? "Low" : "OK";
+                            var statusClass = status switch
+                            {
+                                "Out" => "bg-rose-600/15 text-rose-300 border border-rose-500/20",
+                                "Low" => "bg-amber-600/15 text-amber-300 border border-amber-500/20",
+                                _ => "bg-emerald-600/15 text-emerald-300 border border-emerald-500/20"
+                            };
+
+                            <div class="border border-[#344465] bg-[#243047]/15 p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-bold text-[#195de6] truncate">@v.SKU</div>
+                                        <div class="text-[11px] text-slate-400 mt-1 truncate">@v.Grade · @v.Size · @v.Unit</div>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold @statusClass">@status</span>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 mt-3 text-[11px]">
+                                    <div class="bg-[#111621] border border-[#344465] p-2">
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Available</div>
+                                        <div class="font-bold text-slate-200">@avail</div>
+                                    </div>
+                                    <div class="bg-[#111621] border border-[#344465] p-2">
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Reserved</div>
+                                        <div class="font-bold text-slate-200">@resv</div>
+                                    </div>
+                                    <div class="bg-[#111621] border border-[#344465] p-2">
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Consumed</div>
+                                        <div class="font-bold text-slate-200">@cons</div>
+                                    </div>
+                                    <div class="bg-[#111621] border border-[#344465] p-2">
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Received</div>
+                                        <div class="font-bold text-slate-200">@recv</div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3 text-[11px] text-slate-500">
+                                    Min level: <span class="text-slate-200 font-semibold">@v.MinimumStockLevel</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@if (_showAddMaterial)
+{
+    <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @onclick="CloseAddMaterial">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-2xl w-full max-w-2xl m-4" @onclick:stopPropagation="true">
+            <div class="p-4 border-b border-[#344465] flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-200">Add Material</div>
+                    <div class="text-[11px] text-slate-400 mt-1">Create a variant under a category (this drives the hierarchy).</div>
+                </div>
+                <button class="p-2 text-slate-400 hover:text-white" @onclick="CloseAddMaterial" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-4">
+                @if (!string.IsNullOrEmpty(_addError))
+                {
+                    <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_addError</div>
+                }
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Material Type</span>
+                            <label class="text-[10px] text-slate-400 flex items-center gap-2">
+                                <input type="checkbox" class="accent-[#195de6]" @bind="_addNewCategory" />
+                                New type
+                            </label>
+                        </div>
+
+                        @if (_addNewCategory)
+                        {
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Type Name</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200 mb-3" @bind="_newCategoryName" />
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Description (optional)</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newCategoryDesc" />
+                        }
+                        else
+                        {
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Material Type</label>
+                            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_selectedCategoryForAdd" @bind:after="RefreshGradesForSelectedType">
+                                <option value="">-- Select material type --</option>
+                                @foreach (var c in _categories.OrderBy(x => x.Name))
+                                {
+                                    <option value="@c.Id">@c.Name</option>
+                                }
+                            </select>
+                        }
+
+                        <div class="mt-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Grades</span>
+                                <label class="text-[10px] text-slate-400 flex items-center gap-2">
+                                    <input type="checkbox" class="accent-[#195de6]" @bind="_addNewGrade" @bind:after="OnToggleNewGrade" />
+                                    New grade
+                                </label>
+                            </div>
+
+                            @if (_addNewGrade || _addNewCategory)
+                            {
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Grade</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newGradeText" placeholder="e.g. SS304 / AL6061 / TI6AL4V" />
+                            }
+                            else
+                            {
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Grade</label>
+                                <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_selectedGrade">
+                                    <option value="">-- Select grade --</option>
+                                    @foreach (var g in _availableGrades)
+                                    {
+                                        <option value="@g">@g</option>
+                                    }
+                                </select>
+                                @if (_selectedCategoryForAdd.HasValue && _availableGrades.Count == 0)
+                                {
+                                    <div class="text-[11px] text-slate-500 mt-2">
+                                        No grades found for this type yet. Turn on <span class="text-slate-200 font-semibold">New grade</span>.
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <span class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-2">Variant</span>
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">SKU (unique)</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200 mb-3" @bind="_addSku" />
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Grade</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" value="@GetEffectiveGrade()" disabled />
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Size</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_addSize" />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 mt-3">
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Unit</label>
+                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_addUnit" />
+                            </div>
+                            <div class="text-[11px] text-slate-500 flex items-end">
+                                Minimum stock level removed from this form (can be added later if needed).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button class="px-3 py-2 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseAddMaterial" type="button">Cancel</button>
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="SaveAddMaterialAsync" disabled="@_adding" type="button">
+                        @(_adding ? "Saving..." : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private InventorySummaryDto? _summary;
+
+    private List<MaterialCategoryDto> _categories = [];
+    private List<MaterialCategoryDto> _categoriesFiltered = [];
+    private List<MaterialVariantDto> _variants = [];
+    private List<MaterialVariantDto> _variantsFiltered = [];
+
+    private string _search = "";
+
+    private Dictionary<Guid, VariantStockSummaryDto> _variantSummaries = new();
+
+    private bool _showAddMaterial;
+    private bool _adding;
+    private string? _addError;
+
+    private bool _addNewCategory;
+    private string _newCategoryName = "";
+    private string _newCategoryDesc = "";
+    private Guid? _selectedCategoryForAdd;
+
+    private string _addSku = "";
+    private string _addSize = "";
+    private string _addUnit = "Kg";
+
+    private bool _addNewGrade;
+    private string _newGradeText = "";
+    private string _selectedGrade = "";
+    private List<string> _availableGrades = [];
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _summary = await Api.GetInventorySummaryAsync(Auth.BaseUrl);
+
+        _categories = (await Api.GetMaterialCategoriesAsync(Auth.BaseUrl))?.ToList() ?? [];
+        _variants = (await Api.GetMaterialVariantsAsync(Auth.BaseUrl))?.ToList() ?? [];
+
+        ApplyFilter();
+
+        // Warm-load summaries for visible variants (fine for small seeded data).
+        _variantSummaries = new Dictionary<Guid, VariantStockSummaryDto>();
+        foreach (var v in _variants.Take(50))
+        {
+            var sum = await Api.GetVariantStockSummaryAsync(Auth.BaseUrl, v.Id);
+            if (sum != null) _variantSummaries[v.Id] = sum;
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void OpenAddMaterial()
+    {
+        _addError = null;
+        _adding = false;
+        _showAddMaterial = true;
+        _addNewCategory = false;
+        _newCategoryName = "";
+        _newCategoryDesc = "";
+        _selectedCategoryForAdd = null;
+        _addSku = "";
+        _addSize = "";
+        _addUnit = "Kg";
+        _addNewGrade = false;
+        _newGradeText = "";
+        _selectedGrade = "";
+        _availableGrades = [];
+        StateHasChanged();
+    }
+
+    private void CloseAddMaterial()
+    {
+        _showAddMaterial = false;
+        _addError = null;
+        _adding = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveAddMaterialAsync()
+    {
+        _addError = null;
+        _adding = true;
+        StateHasChanged();
+
+        try
+        {
+            Guid categoryId;
+            if (_addNewCategory)
+            {
+                if (string.IsNullOrWhiteSpace(_newCategoryName))
+                {
+                    _addError = "Category name is required.";
+                    return;
+                }
+
+                var (cat, catErr) = await Api.CreateMaterialCategoryAsync(Auth.BaseUrl, _newCategoryName.Trim(), string.IsNullOrWhiteSpace(_newCategoryDesc) ? null : _newCategoryDesc.Trim());
+                if (cat == null)
+                {
+                    _addError = catErr ?? "Failed to create category.";
+                    return;
+                }
+                categoryId = cat.Id;
+            }
+            else
+            {
+                if (!_selectedCategoryForAdd.HasValue)
+                {
+                    _addError = "Please select a category (or enable New category).";
+                    return;
+                }
+                categoryId = _selectedCategoryForAdd.Value;
+            }
+
+            if (string.IsNullOrWhiteSpace(_addSku)) { _addError = "SKU is required."; return; }
+            if (string.IsNullOrWhiteSpace(_addUnit)) { _addError = "Unit is required."; return; }
+
+            var grade = GetEffectiveGrade();
+            if (string.IsNullOrWhiteSpace(grade))
+            {
+                _addError = "Grade is required for this material type.";
+                return;
+            }
+
+            var (variant, varErr) = await Api.CreateMaterialVariantAsync(
+                Auth.BaseUrl,
+                materialCategoryId: categoryId,
+                grade: grade.Trim(),
+                size: string.IsNullOrWhiteSpace(_addSize) ? null : _addSize.Trim(),
+                unit: _addUnit.Trim(),
+                sku: _addSku.Trim(),
+                minimumStockLevel: 0);
+
+            if (variant == null)
+            {
+                _addError = varErr ?? "Failed to create variant.";
+                return;
+            }
+
+            _showAddMaterial = false;
+            await LoadAsync();
+        }
+        finally
+        {
+            _adding = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        var s = _search.Trim();
+        var catQuery = _categories.AsEnumerable();
+        var varQuery = _variants.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(s))
+        {
+            catQuery = catQuery.Where(c =>
+                c.Name.Contains(s, StringComparison.OrdinalIgnoreCase)
+                || (c.Description?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            varQuery = varQuery.Where(v =>
+                v.SKU.Contains(s, StringComparison.OrdinalIgnoreCase)
+                || v.Grade.Contains(s, StringComparison.OrdinalIgnoreCase)
+                || v.Size.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Ensure categories include those referenced by filtered variants
+        var categoryIdsFromVariants = varQuery.Select(v => v.MaterialCategoryId).Distinct().ToHashSet();
+        _categoriesFiltered = catQuery
+            .Where(c => categoryIdsFromVariants.Contains(c.Id) || string.IsNullOrWhiteSpace(s))
+            .OrderBy(c => c.Name)
+            .ToList();
+
+        _variantsFiltered = varQuery.OrderBy(v => v.SKU).ToList();
+        StateHasChanged();
+    }
+
+    private void RefreshGradesForSelectedType()
+    {
+        _availableGrades = _selectedCategoryForAdd.HasValue
+            ? _variants
+                .Where(v => v.MaterialCategoryId == _selectedCategoryForAdd.Value)
+                .Select(v => v.Grade)
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g)
+                .ToList()
+            : [];
+
+        // Reset grade selection when material type changes
+        _selectedGrade = "";
+        _newGradeText = "";
+        StateHasChanged();
+    }
+
+    private void OnToggleNewGrade()
+    {
+        _selectedGrade = "";
+        _newGradeText = "";
+        StateHasChanged();
+    }
+
+    private string GetEffectiveGrade()
+    {
+        if (_addNewCategory || _addNewGrade) return _newGradeText ?? "";
+        return _selectedGrade ?? "";
+    }
+}
+
+
