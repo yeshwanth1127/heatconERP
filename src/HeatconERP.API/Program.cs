@@ -109,18 +109,12 @@ using (var scope = app.Services.CreateScope())
     try { /* Quotations: no seed - created only from enquiries or manually */ } catch { }
     try { if (!await db.PurchaseOrders.AnyAsync())
         {
-            var pos = new[] { ("PO-9943-Z", "Mark Thompson", 14500m), ("PO-9944-A", "Jane Doe", 8200m) };
-            foreach (var (num, name, val) in pos)
-                db.PurchaseOrders.Add(new PurchaseOrder { Id = Guid.NewGuid(), OrderNumber = num, Status = "Active", Value = val, CreatedAt = DateTime.UtcNow, CreatedByUserName = name });
+            var today = DateTime.UtcNow.Date;
+            var pos = new[] { ("PO-2501", "PO-9943-Z", "Mark Thompson", 14500m), ("PO-2502", "PO-9944-A", "Jane Doe", 8200m) };
+            foreach (var (orderNum, custPo, name, val) in pos)
+                db.PurchaseOrders.Add(new PurchaseOrder { Id = Guid.NewGuid(), OrderNumber = orderNum, CustomerPONumber = custPo, PODate = today, Status = "Active", Value = val, CreatedAt = DateTime.UtcNow, CreatedByUserName = name });
         } } catch { /* PurchaseOrders seed skipped */ }
-    try { if (!await db.WorkOrders.AnyAsync())
-        {
-            var stages = new[] { WorkOrderStage.Planning, WorkOrderStage.Material, WorkOrderStage.Assembly, WorkOrderStage.Testing, WorkOrderStage.QC, WorkOrderStage.Packing };
-            var counts = new[] { 42, 31, 124, 98, 22, 11 };
-            for (var s = 0; s < stages.Length; s++)
-                for (var i = 0; i < counts[s]; i++)
-                    db.WorkOrders.Add(new WorkOrder { Id = Guid.NewGuid(), OrderNumber = $"WO-{4400 + s}-{i:D2}", Stage = stages[s], Status = "Active", CreatedAt = DateTime.UtcNow });
-        } } catch { /* WorkOrders seed skipped */ }
+    // WorkOrders: do not seed - should come from "Convert to Work Order"
     try { if (!await db.ActivityLogs.AnyAsync())
         {
             var logs = new[]

@@ -1,4 +1,580 @@
 @page "/purchaseorders"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
 <PageTitle>Purchase Orders - HeatconERP</PageTitle>
-<h1>Purchase Orders</h1>
-<p class="text-muted">This module is under development.</p>
+
+<div class="-m-6 flex flex-col min-h-[calc(100vh-5.5rem)]">
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <div class="bg-[#1a2233] border-b border-[#344465] px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            <div class="flex items-center gap-3">
+                <h1 class="text-xl font-bold text-white leading-none">Purchase Orders</h1>
+                <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Customer POs</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="flex items-center gap-2 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-white px-4 py-2 text-xs font-bold rounded" @onclick="OpenCreateFromQuotation">
+                    <span class="material-symbols-outlined text-sm">request_quote</span>
+                    Create from Quotation
+                </button>
+                <button class="flex items-center gap-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white px-4 py-2 text-xs font-bold rounded shadow-lg shadow-[#195de6]/10 transition-all" @onclick="CreateNewPO">
+                    <span class="material-symbols-outlined text-sm">add</span>
+                    New PO
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden min-h-0">
+            <div class="flex-1 flex flex-col overflow-hidden border-r border-[#344465]">
+                <div class="p-4 grid grid-cols-4 gap-4 bg-[#111621]/50 shrink-0">
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Customer PO #</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" type="text" placeholder="Filter by customer PO" @bind="_filterCustomerPO" @bind:after="LoadAsync" />
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Client</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" type="text" placeholder="Filter by client" @bind="_filterClient" @bind:after="LoadAsync" />
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_filterStatus" @bind:after="LoadAsync">
+                            <option value="">All</option>
+                            <option value="Active">Active</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button class="w-full bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="LoadAsync">
+                            <span class="material-symbols-outlined text-sm">filter_list</span> Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+                    @if (_loading)
+                    {
+                        <div class="flex items-center justify-center p-12 text-slate-400">Loading purchase orders...</div>
+                    }
+                    else
+                    {
+                        <table class="w-full border-collapse text-left text-xs">
+                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">PO #</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Customer PO</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Date</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Quotation</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Client</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight text-right">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_list.Count == 0)
+                                {
+                                    <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No purchase orders found.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var po in _list)
+                                    {
+                                        <tr class="border-b border-[#344465]/30 hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(po.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent")" @onclick="@(() => SelectPO(po.Id))">
+                                            <td class="px-4 py-3 font-bold text-[#195de6]">@po.OrderNumber</td>
+                                            <td class="px-4 py-3 text-slate-300">@po.CustomerPONumber</td>
+                                            <td class="px-4 py-3 text-slate-400">@po.PODate.ToString("dd MMM yyyy")</td>
+                                            <td class="px-4 py-3 text-slate-400">@(po.QuotationReferenceNumber ?? "—") @(po.QuotationVersion != null ? $"({po.QuotationVersion})" : "") @(po.SentRevisionVersion != null ? $" <span class=\"text-emerald-400/90\">Sent @po.SentRevisionVersion</span>" : "")</td>
+                                            <td class="px-4 py-3 text-slate-400">@(po.ClientName ?? "—")</td>
+                                            <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold @GetStatusClass(po.Status)">@po.Status</span></td>
+                                            <td class="px-4 py-3 text-right font-medium text-slate-300">@(po.Value.HasValue ? FormatInr(po.Value.Value) : "—")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+
+            <aside class="w-[420px] shrink-0 flex flex-col overflow-hidden bg-[#111621] border-l border-[#344465]">
+                @if (_selectedDetail == null)
+                {
+                    <div class="p-6 text-center text-slate-500 text-sm">Select a purchase order from the list to view and edit details.</div>
+                }
+                else
+                {
+                    <div class="p-3 border-b border-[#344465] flex items-center justify-between bg-[#243047]/30">
+                        <span class="text-xs font-bold text-[#195de6] uppercase tracking-wider">@_selectedDetail.OrderNumber</span>
+                        @if (_selectedDetail.QuotationId.HasValue)
+                        {
+                            <button class="text-[10px] font-bold text-slate-400 hover:text-[#195de6] flex items-center gap-1" @onclick="LoadCompare">Compare with Quote</button>
+                        }
+                    </div>
+                    <div class="flex-1 overflow-y-auto industrial-scrollbar p-4 space-y-4">
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Customer PO Number</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" @bind="_editCustomerPONumber" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">PO Date</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" type="date" @bind="_editPODate" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Delivery Terms</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" @bind="_editDeliveryTerms" placeholder="Optional" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Payment Terms</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" @bind="_editPaymentTerms" placeholder="Optional" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Status</label>
+                            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_editStatus">
+                                <option value="Active">Active</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        @if (_selectedDetail.QuotationReferenceNumber != null)
+                        {
+                            <div class="text-[10px] text-slate-500">Linked quotation: <span class="text-[#195de6] font-medium">@_selectedDetail.QuotationReferenceNumber</span> @_selectedDetail.QuotationVersion</div>
+                            @if (!string.IsNullOrEmpty(_selectedDetail.SentRevisionVersion))
+                            {
+                                <div class="text-[10px] text-emerald-500/90 mt-0.5">Sent to customer (revision linked): <strong>@_selectedDetail.SentRevisionVersion</strong></div>
+                            }
+                        }
+
+                        <div class="pt-2">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Line Items</span>
+                                <button class="text-[10px] font-bold text-[#195de6] hover:underline" @onclick="AddLineItem">+ Add line</button>
+                            </div>
+                            <table class="w-full border-collapse text-[11px]">
+                                <thead>
+                                    <tr class="text-slate-500 border-b border-[#344465]">
+                                        <th class="text-left py-1 pr-2">Part / Desc</th>
+                                        <th class="text-right py-1 w-14">Qty</th>
+                                        <th class="text-right py-1 w-20">Price</th>
+                                        <th class="text-right py-1 w-12">Tax%</th>
+                                        <th class="w-8"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var (item, index) in _editingLineItems.Select((x, i) => (x, i)))
+                                    {
+                                        <tr class="border-b border-[#344465]/30">
+                                            <td class="py-1 pr-2">
+                                                <input class="w-full bg-[#243047] border border-[#344465] rounded px-1.5 py-0.5 text-slate-200" placeholder="Part" @bind="item.PartNumber" />
+                                                <input class="w-full bg-[#243047] border border-[#344465] rounded px-1.5 py-0.5 text-slate-400 mt-0.5" placeholder="Description" @bind="item.Description" />
+                                            </td>
+                                            <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" @bind="item.Quantity" /></td>
+                                            <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" step="0.01" @bind="item.UnitPrice" /></td>
+                                            <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" step="0.01" @bind="item.TaxPercent" /></td>
+                                            <td class="py-1"><button type="button" class="text-slate-500 hover:text-rose-400" @onclick="@(() => RemoveLineItem(index))"><span class="material-symbols-outlined text-sm">close</span></button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            <div class="mt-2 text-right text-xs font-bold text-slate-300">Total: @FormatInr(_grandTotal)</div>
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-[#344465] bg-[#243047]/30 space-y-2">
+                        @if (!string.IsNullOrEmpty(_convertError))
+                        {
+                            <p class="text-red-400 text-xs mb-2">@_convertError</p>
+                        }
+                        <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="ConvertToInvoice" disabled="@(_saving || _convertingToInvoice)">
+                            @if (_convertingToInvoice) { <span>Creating Invoice...</span> } else { <span class="material-symbols-outlined text-sm">receipt_long</span> <span>Convert to Invoice</span> }
+                        </button>
+                        <button class="w-full bg-[#195de6] hover:bg-[#195de6]/90 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="SavePO" disabled="@(_saving || _convertingToInvoice)">
+                            @if (_saving) { <span>Saving...</span> } else { <span class="material-symbols-outlined text-sm">save</span> <span>Save</span> }
+                        </button>
+                        @if (_saveSuccess)
+                        {
+                            <p class="text-emerald-400 text-xs mt-2 text-center">Saved successfully.</p>
+                        }
+                    </div>
+                }
+            </aside>
+        </div>
+    </main>
+</div>
+
+@if (_showCreateFromQuotation)
+{
+    <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @onclick="CloseCreateFromQuotation">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-xl w-full max-w-md m-4 p-4" @onclick:stopPropagation="true">
+            <h3 class="text-sm font-bold text-white mb-3">Create PO from Quotation</h3>
+            <p class="text-xs text-slate-400 mb-3">Select a quotation to copy line items into a new purchase order.</p>
+            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200 mb-3" @bind="_createFromQuotationId" @bind:after="OnCreateFromQuotationSelectedAsync">
+                <option value="">-- Select quotation --</option>
+                @foreach (var q in _quotationsForCreate)
+                {
+                    <option value="@q.Id">@q.ReferenceNumber @q.Version - @(q.ClientName ?? "—")</option>
+                }
+            </select>
+            @if (_quotationDetailForCreate != null && _sentRevisionForCreate != null)
+            {
+                <p class="text-[10px] text-emerald-400/90 mb-2">Link to sent revision: <strong>@_sentRevisionForCreate.Version</strong> (use for incoming PO)</p>
+            }
+            @if (_quotationDetailForCreate != null && _sentRevisionForCreate == null)
+            {
+                <p class="text-[10px] text-amber-500/90 mb-2">No revision sent to customer yet. Send a revision from Quotations → Saved Revisions first to link PO to it.</p>
+            }
+            <div class="flex gap-2 justify-end">
+                <button class="px-3 py-1.5 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseCreateFromQuotation">Cancel</button>
+                <button class="px-3 py-1.5 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="ConfirmCreateFromQuotation" disabled="@(!_createFromQuotationId.HasValue || _creating)">@(_creating ? "Creating..." : "Create PO")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_compareData != null)
+{
+    <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 overflow-y-auto p-4" @onclick="CloseCompare">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-xl w-full max-w-4xl my-4 p-4 max-h-[90vh] overflow-auto" @onclick:stopPropagation="true">
+            <h3 class="text-sm font-bold text-white mb-2">Compare PO @_compareData.OrderNumber with Quotation @_compareData.QuotationReferenceNumber</h3>
+            <table class="w-full border-collapse text-xs">
+                <thead>
+                    <tr class="bg-[#243047] border-b border-[#344465]">
+                        <th class="px-2 py-2 text-left">Part</th>
+                        <th class="px-2 py-2 text-left">PO Desc</th>
+                        <th class="px-2 py-2 text-left">Quote Desc</th>
+                        <th class="px-2 py-2 text-center">Match</th>
+                        <th class="px-2 py-2 text-right">PO Qty</th>
+                        <th class="px-2 py-2 text-right">Quote Qty</th>
+                        <th class="px-2 py-2 text-right">PO Price</th>
+                        <th class="px-2 py-2 text-right">Quote Price</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _compareData.Comparisons)
+                    {
+                        var anyMismatch = c.DescriptionMismatch || c.QuantityMismatch || c.PriceMismatch;
+                        <tr class="border-b border-[#344465]/30 @(anyMismatch ? "bg-amber-500/10" : "")">
+                            <td class="px-2 py-1.5 font-medium">@c.PartNumber</td>
+                            <td class="px-2 py-1.5 text-slate-400">@c.PoDescription</td>
+                            <td class="px-2 py-1.5 text-slate-400">@c.QuotationDescription</td>
+                            <td class="px-2 py-1.5 text-center">@(anyMismatch ? "⚠" : "✓")</td>
+                            <td class="px-2 py-1.5 text-right">@c.PoQuantity</td>
+                            <td class="px-2 py-1.5 text-right">@c.QuotationQuantity</td>
+                            <td class="px-2 py-1.5 text-right">@FormatInr(c.PoUnitPrice)</td>
+                            <td class="px-2 py-1.5 text-right">@FormatInr(c.QuotationUnitPrice)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="mt-3 flex justify-end">
+                <button class="px-3 py-1.5 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseCompare">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")]
+    private Guid? QueryId { get; set; }
+
+    private List<PurchaseOrderListDto> _list = [];
+    private PurchaseOrderDetailDto? _selectedDetail;
+    private Guid? _selectedId;
+    private bool _loading = true;
+    private string _filterCustomerPO = "";
+    private string _filterClient = "";
+    private string _filterStatus = "";
+    private string _editCustomerPONumber = "";
+    private DateTime _editPODate = DateTime.UtcNow.Date;
+    private string _editDeliveryTerms = "";
+    private string _editPaymentTerms = "";
+    private string _editStatus = "Active";
+    private List<EditablePOLineItem> _editingLineItems = [];
+    private bool _saving;
+    private bool _saveSuccess;
+    private bool _convertingToInvoice;
+    private string? _convertError;
+    private bool _showCreateFromQuotation;
+    private Guid? _createFromQuotationId;
+    private bool _creating;
+    private List<QuotationListDto> _quotationsForCreate = [];
+    private QuotationDetailDto? _quotationDetailForCreate;
+    private QuotationRevisionDto? _sentRevisionForCreate;
+    private PurchaseOrderCompareDto? _compareData;
+
+    private decimal _grandTotal => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice * (1 + x.TaxPercent / 100m));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        // If query parameter id is provided, select that PO
+        if (QueryId.HasValue)
+        {
+            await SelectPO(QueryId.Value);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Handle id query parameter when navigating
+        if (QueryId.HasValue && QueryId.Value != _selectedId)
+        {
+            await SelectPO(QueryId.Value);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        var items = await Api.GetPurchaseOrdersAsync(Auth.BaseUrl,
+            customerPONumber: string.IsNullOrWhiteSpace(_filterCustomerPO) ? null : _filterCustomerPO,
+            status: string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus,
+            client: string.IsNullOrWhiteSpace(_filterClient) ? null : _filterClient);
+        _list = items?.ToList() ?? [];
+        _loading = false;
+        if (_selectedId.HasValue && !_list.Any(p => p.Id == _selectedId.Value))
+            _selectedId = null;
+        if (_selectedId.HasValue)
+            await LoadDetailAsync(_selectedId.Value);
+        else if (_list.Count > 0 && !_selectedId.HasValue)
+            await SelectPO(_list[0].Id);
+        StateHasChanged();
+    }
+
+    private async Task SelectPO(Guid id)
+    {
+        _selectedId = id;
+        _compareData = null;
+        await LoadDetailAsync(id);
+        StateHasChanged();
+    }
+
+    private async Task LoadDetailAsync(Guid id)
+    {
+        _selectedDetail = await Api.GetPurchaseOrderByIdAsync(Auth.BaseUrl, id);
+        if (_selectedDetail == null) return;
+        _editCustomerPONumber = _selectedDetail.CustomerPONumber ?? "";
+        _editPODate = _selectedDetail.PODate;
+        _editDeliveryTerms = _selectedDetail.DeliveryTerms ?? "";
+        _editPaymentTerms = _selectedDetail.PaymentTerms ?? "";
+        _editStatus = _selectedDetail.Status ?? "Active";
+        _editingLineItems = _selectedDetail.LineItems.Select(li => new EditablePOLineItem
+        {
+            PartNumber = li.PartNumber,
+            Description = li.Description,
+            Quantity = li.Quantity,
+            UnitPrice = li.UnitPrice,
+            TaxPercent = li.TaxPercent,
+            AttachmentPath = li.AttachmentPath
+        }).ToList();
+        if (_editingLineItems.Count == 0)
+            _editingLineItems.Add(new EditablePOLineItem());
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CreateNewPO()
+    {
+        var req = new CreatePurchaseOrderRequest(null, null, null, "", DateTime.UtcNow.Date, null, null, "Active", Auth.CurrentUser?.Username, null);
+        var created = await Api.CreatePurchaseOrderAsync(Auth.BaseUrl, req);
+        if (created != null)
+        {
+            await LoadAsync();
+            _selectedId = created.Id;
+            await LoadDetailAsync(created.Id);
+        }
+        StateHasChanged();
+    }
+
+    private void OpenCreateFromQuotation()
+    {
+        _quotationsForCreate = [];
+        _quotationDetailForCreate = null;
+        _sentRevisionForCreate = null;
+        _ = LoadQuotationsForCreateAsync();
+        _showCreateFromQuotation = true;
+        _createFromQuotationId = null;
+        StateHasChanged();
+    }
+
+    private async Task LoadQuotationsForCreateAsync()
+    {
+        var quotes = await Api.GetQuotationsAsync(Auth.BaseUrl, null, null, null, null);
+        _quotationsForCreate = quotes?.ToList() ?? [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnCreateFromQuotationSelectedAsync()
+    {
+        _quotationDetailForCreate = null;
+        _sentRevisionForCreate = null;
+        if (!_createFromQuotationId.HasValue) { StateHasChanged(); return; }
+        var detail = await Api.GetQuotationByIdAsync(Auth.BaseUrl, _createFromQuotationId.Value);
+        _quotationDetailForCreate = detail;
+        _sentRevisionForCreate = detail?.Revisions?.Where(r => r.SentToCustomerAt.HasValue).OrderByDescending(r => r.SentToCustomerAt).FirstOrDefault();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseCreateFromQuotation()
+    {
+        _showCreateFromQuotation = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmCreateFromQuotation()
+    {
+        if (!_createFromQuotationId.HasValue) return;
+        _creating = true;
+        StateHasChanged();
+        var req = new CreatePurchaseOrderRequest(null, _createFromQuotationId.Value, _sentRevisionForCreate?.Id, "", DateTime.UtcNow.Date, null, null, "Active", Auth.CurrentUser?.Username, null);
+        var created = await Api.CreatePurchaseOrderAsync(Auth.BaseUrl, req);
+        _creating = false;
+        _showCreateFromQuotation = false;
+        if (created != null)
+        {
+            await LoadAsync();
+            _selectedId = created.Id;
+            await LoadDetailAsync(created.Id);
+        }
+        StateHasChanged();
+    }
+
+    private void AddLineItem()
+    {
+        _editingLineItems.Add(new EditablePOLineItem());
+        StateHasChanged();
+    }
+
+    private void RemoveLineItem(int index)
+    {
+        if (index >= 0 && index < _editingLineItems.Count)
+        {
+            _editingLineItems.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    private async Task SavePO()
+    {
+        if (_selectedDetail == null) return;
+        _saving = true;
+        StateHasChanged();
+        var lineItems = _editingLineItems.Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description))
+            .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath)).ToList();
+        var req = new UpdatePurchaseOrderRequest(_selectedDetail.OrderNumber, _editCustomerPONumber, _editPODate, _editDeliveryTerms, _editPaymentTerms, _editStatus, lineItems);
+        var ok = await Api.UpdatePurchaseOrderAsync(Auth.BaseUrl, _selectedDetail.Id, req);
+        _saving = false;
+        if (ok)
+        {
+            _saveSuccess = true;
+            await LoadAsync();
+            _ = ClearSaveSuccessAfterDelay();
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadCompare()
+    {
+        if (_selectedId == null) return;
+        _compareData = await Api.GetPurchaseOrderCompareAsync(Auth.BaseUrl, _selectedId.Value);
+        StateHasChanged();
+    }
+
+    private void CloseCompare()
+    {
+        _compareData = null;
+        StateHasChanged();
+    }
+
+    private async Task ClearSaveSuccessAfterDelay()
+    {
+        await Task.Delay(2000);
+        _saveSuccess = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConvertToInvoice()
+    {
+        if (_selectedDetail == null) return;
+        
+        _convertingToInvoice = true;
+        _convertError = null;
+        StateHasChanged();
+
+        try
+        {
+            // Ensure the PO line items currently in the editor are persisted
+            var poLineItems = _editingLineItems
+                .Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description))
+                .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath))
+                .ToList();
+
+            var saveReq = new UpdatePurchaseOrderRequest(
+                _selectedDetail.OrderNumber,
+                _editCustomerPONumber,
+                _editPODate,
+                _editDeliveryTerms,
+                _editPaymentTerms,
+                _editStatus,
+                poLineItems);
+
+            var saved = await Api.UpdatePurchaseOrderAsync(Auth.BaseUrl, _selectedDetail.Id, saveReq);
+            if (!saved)
+            {
+                _convertError = "Failed to save the purchase order before converting to invoice.";
+                _convertingToInvoice = false;
+                StateHasChanged();
+                return;
+            }
+
+            var req = new CreatePurchaseInvoiceRequest(
+                PurchaseOrderId: _selectedDetail.Id,
+                InvoiceNumber: null, // Let server generate
+                InvoiceDate: DateTime.UtcNow.Date,
+                DueDate: DateTime.UtcNow.Date.AddDays(30), // Default 30 days payment terms
+                Status: "Draft",
+                CreatedByUserName: Auth.CurrentUser?.Username
+            );
+
+            var (createdInvoice, error) = await Api.CreatePurchaseInvoiceWithErrorAsync(Auth.BaseUrl, req);
+            
+            if (createdInvoice != null)
+            {
+                // Navigate to Purchase Invoices page with the created invoice selected
+                Nav.NavigateTo($"/purchaseinvoices?id={createdInvoice.Id}");
+            }
+            else
+            {
+                _convertError = error ?? "Failed to create invoice. Please try again.";
+                _convertingToInvoice = false;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _convertError = ex.Message;
+            _convertingToInvoice = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetStatusClass(string status) => status switch
+    {
+        "Active" => "bg-emerald-500/20 text-emerald-400",
+        "Completed" => "bg-slate-500/20 text-slate-400",
+        "Cancelled" => "bg-rose-500/20 text-rose-400",
+        _ => "bg-slate-500/20 text-slate-400"
+    };
+
+    private static string FormatInr(decimal value) => "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
+
+    private class EditablePOLineItem
+    {
+        public string PartNumber { get; set; } = "";
+        public string Description { get; set; } = "";
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal TaxPercent { get; set; }
+        public string? AttachmentPath { get; set; }
+    }
+}

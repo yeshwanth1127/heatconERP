@@ -1,0 +1,383 @@
+@page "/purchaseinvoices"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Purchase Invoices - HeatconERP</PageTitle>
+
+<div class="-m-6 flex flex-col min-h-[calc(100vh-5.5rem)]">
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <div class="bg-[#1a2233] border-b border-[#344465] px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            <div class="flex items-center gap-3">
+                <h1 class="text-xl font-bold text-white leading-none">Purchase Invoices</h1>
+                <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Invoices to Customer</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="flex items-center gap-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white px-4 py-2 text-xs font-bold rounded shadow-lg shadow-[#195de6]/10 transition-all" @onclick="OpenCreateFromPO">
+                    <span class="material-symbols-outlined text-sm">add</span>
+                    Create from Purchase Order
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden min-h-0">
+            <div class="flex-1 flex flex-col overflow-hidden border-r border-[#344465]">
+                <div class="p-4 grid grid-cols-4 gap-4 bg-[#111621]/50 shrink-0">
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Invoice #</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" type="text" placeholder="Filter by invoice number" @bind="_filterInvoiceNumber" @bind:after="LoadAsync" />
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200 focus:ring-[#195de6] focus:border-[#195de6]" @bind="_filterStatus" @bind:after="LoadAsync">
+                            <option value="">All</option>
+                            <option value="Draft">Draft</option>
+                            <option value="Sent">Sent</option>
+                            <option value="Paid">Paid</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end col-span-2">
+                        <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+                            <span class="material-symbols-outlined text-sm">filter_list</span> Filter
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+                    @if (_loading)
+                    {
+                        <div class="flex items-center justify-center p-12 text-slate-400">Loading purchase invoices...</div>
+                    }
+                    else
+                    {
+                        <table class="w-full border-collapse text-left text-xs">
+                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Invoice #</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">PO #</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Date</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Due Date</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_list.Count == 0)
+                                {
+                                    <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No purchase invoices found. Create one from a Purchase Order.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var inv in _list)
+                                    {
+                                        <tr class="border-b border-[#344465]/30 hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(inv.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent")" @onclick="@(() => SelectInvoice(inv.Id))">
+                                            <td class="px-4 py-3 font-bold text-[#195de6]">@inv.InvoiceNumber</td>
+                                            <td class="px-4 py-3 text-slate-300">@(inv.PurchaseOrderNumber ?? "—")</td>
+                                            <td class="px-4 py-3 text-slate-400">@inv.InvoiceDate.ToString("dd MMM yyyy")</td>
+                                            <td class="px-4 py-3 text-slate-400">@(inv.DueDate?.ToString("dd MMM yyyy") ?? "—")</td>
+                                            <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold @GetStatusClass(inv.Status)">@inv.Status</span></td>
+                                            <td class="px-4 py-3 text-right font-medium text-slate-300">@FormatInr(inv.TotalAmount)</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+
+            <aside class="w-[420px] shrink-0 flex flex-col overflow-hidden bg-[#111621] border-l border-[#344465]">
+                @if (_selectedDetail == null)
+                {
+                    <div class="p-6 text-center text-slate-500 text-sm">Select an invoice from the list to view details.</div>
+                }
+                else
+                {
+                    <div class="p-3 border-b border-[#344465] bg-[#243047]/30">
+                        <span class="text-xs font-bold text-[#195de6] uppercase tracking-wider">@_selectedDetail.InvoiceNumber</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto industrial-scrollbar p-4 space-y-4">
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Purchase Order</label>
+                            <p class="text-sm text-slate-300">@(_selectedDetail.PurchaseOrderNumber ?? "—")</p>
+                            @if (_selectedDetail.QuotationReferenceNumber != null)
+                            {
+                                <p class="text-[10px] text-slate-500 mt-0.5">Quotation: @_selectedDetail.QuotationReferenceNumber @_selectedDetail.QuotationVersion</p>
+                            }
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Invoice Date</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" type="date" @bind="_editInvoiceDate" disabled="@(_selectedDetail.Status != "Draft")" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Due Date</label>
+                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" type="date" @bind="_editDueDate" disabled="@(_selectedDetail.Status != "Draft")" />
+                        </div>
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Status</label>
+                            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_editStatus">
+                                <option value="Draft">Draft</option>
+                                <option value="Sent">Sent</option>
+                                <option value="Paid">Paid</option>
+                            </select>
+                        </div>
+                        <div class="pt-2">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Line Items</span>
+                            @if (_selectedDetail.LineItems == null || _selectedDetail.LineItems.Count == 0)
+                            {
+                                <p class="text-xs text-slate-500 py-2">No line items found.</p>
+                            }
+                            else
+                            {
+                                <table class="w-full border-collapse text-[11px]">
+                                    <thead>
+                                        <tr class="text-slate-500 border-b border-[#344465]">
+                                            <th class="text-left py-1 pr-2">Part / Desc</th>
+                                            <th class="text-right py-1 w-14">Qty</th>
+                                            <th class="text-right py-1 w-20">Price</th>
+                                            <th class="text-right py-1 w-16">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var li in _selectedDetail.LineItems)
+                                        {
+                                            <tr class="border-b border-[#344465]/30">
+                                                <td class="py-1 pr-2 text-slate-300">@li.PartNumber @(string.IsNullOrEmpty(li.Description) ? "" : " – " + li.Description)</td>
+                                                <td class="text-right py-1">@li.Quantity</td>
+                                                <td class="text-right py-1">@FormatInr(li.UnitPrice)</td>
+                                                <td class="text-right py-1 font-medium">@FormatInr(li.LineTotal ?? li.Quantity * li.UnitPrice * (1 + li.TaxPercent / 100m))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                <div class="mt-2 text-right text-xs font-bold text-slate-300">Total: @FormatInr(_selectedDetail.TotalAmount)</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-[#344465] bg-[#243047]/30">
+                        @if (!string.IsNullOrEmpty(_convertWorkOrderError))
+                        {
+                            <p class="text-red-400 text-xs mb-2">@_convertWorkOrderError</p>
+                        }
+                        <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="ConvertToWorkOrder" disabled="@(_saving || _convertingToWorkOrder)">
+                            @if (_saving || _convertingToWorkOrder) { <span>Converting...</span> } else { <span class="material-symbols-outlined text-sm">assignment</span> <span>Convert to Work Order</span> }
+                        </button>
+                        @if (_convertWorkOrderSuccess)
+                        {
+                            <p class="text-emerald-400 text-xs mt-2 text-center">Work order created: @_createdWorkOrderNumber</p>
+                        }
+                    </div>
+                }
+            </aside>
+        </div>
+    </main>
+</div>
+
+@if (_showCreateFromPO)
+{
+    <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @onclick="CloseCreateFromPO">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-xl w-full max-w-md m-4 p-4" @onclick:stopPropagation="true">
+            <h3 class="text-sm font-bold text-white mb-3">Create Invoice from Purchase Order</h3>
+            <p class="text-xs text-slate-400 mb-3">Select a purchase order to create an invoice. Line items will be copied from the PO.</p>
+            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200 mb-3" @bind="_createFromPOId">
+                <option value="">-- Select purchase order --</option>
+                @foreach (var po in _posForCreate)
+                {
+                    <option value="@po.Id">@po.OrderNumber – @po.CustomerPONumber (@FormatInr(po.Value ?? 0))</option>
+                }
+            </select>
+            <div class="flex gap-2 justify-end">
+                <button class="px-3 py-1.5 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseCreateFromPO">Cancel</button>
+                <button class="px-3 py-1.5 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="ConfirmCreateFromPO" disabled="@(!_createFromPOId.HasValue || _creating)">@(_creating ? "Creating..." : "Create Invoice")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")]
+    private Guid? QueryId { get; set; }
+
+    private List<PurchaseInvoiceListDto> _list = [];
+    private PurchaseInvoiceDetailDto? _selectedDetail;
+    private Guid? _selectedId;
+    private bool _loading = true;
+    private string _filterInvoiceNumber = "";
+    private string _filterStatus = "";
+    private DateTime _editInvoiceDate = DateTime.UtcNow.Date;
+    private DateTime? _editDueDate;
+    private string _editStatus = "Draft";
+    private bool _saving;
+    private bool _showCreateFromPO;
+    private Guid? _createFromPOId;
+    private bool _creating;
+    private List<PurchaseOrderListDto> _posForCreate = [];
+    private bool _convertingToWorkOrder;
+    private bool _convertWorkOrderSuccess;
+    private string? _createdWorkOrderNumber;
+    private string? _convertWorkOrderError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        // If query parameter id is provided, select that invoice
+        if (QueryId.HasValue)
+        {
+            await SelectInvoice(QueryId.Value);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Handle id query parameter when navigating
+        if (QueryId.HasValue && QueryId.Value != _selectedId)
+        {
+            await SelectInvoice(QueryId.Value);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        var items = await Api.GetPurchaseInvoicesAsync(Auth.BaseUrl,
+            status: string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus,
+            invoiceNumber: string.IsNullOrWhiteSpace(_filterInvoiceNumber) ? null : _filterInvoiceNumber);
+        _list = items?.ToList() ?? [];
+        _loading = false;
+        if (_selectedId.HasValue && !_list.Any(i => i.Id == _selectedId.Value))
+            _selectedId = null;
+        if (_selectedId.HasValue)
+            await LoadDetailAsync(_selectedId.Value);
+        else if (_list.Count > 0 && !_selectedId.HasValue)
+            await SelectInvoice(_list[0].Id);
+        StateHasChanged();
+    }
+
+    private async Task SelectInvoice(Guid id)
+    {
+        _selectedId = id;
+        await LoadDetailAsync(id);
+        StateHasChanged();
+    }
+
+    private async Task LoadDetailAsync(Guid id)
+    {
+        _selectedDetail = await Api.GetPurchaseInvoiceByIdAsync(Auth.BaseUrl, id);
+        if (_selectedDetail == null) return;
+        _editInvoiceDate = _selectedDetail.InvoiceDate;
+        _editDueDate = _selectedDetail.DueDate;
+        _editStatus = _selectedDetail.Status ?? "Draft";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenCreateFromPO()
+    {
+        _ = LoadPOsForCreateAsync();
+        _showCreateFromPO = true;
+        _createFromPOId = null;
+        StateHasChanged();
+    }
+
+    private async Task LoadPOsForCreateAsync()
+    {
+        var pos = await Api.GetPurchaseOrdersAsync(Auth.BaseUrl, limit: 500);
+        _posForCreate = pos?.ToList() ?? [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseCreateFromPO()
+    {
+        _showCreateFromPO = false;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmCreateFromPO()
+    {
+        if (!_createFromPOId.HasValue) return;
+        _creating = true;
+        StateHasChanged();
+        var req = new CreatePurchaseInvoiceRequest(_createFromPOId.Value, null, DateTime.UtcNow.Date, null, "Draft", Auth.CurrentUser?.Username);
+        var created = await Api.CreatePurchaseInvoiceAsync(Auth.BaseUrl, req);
+        _creating = false;
+        _showCreateFromPO = false;
+        if (created != null)
+        {
+            await LoadAsync();
+            _selectedId = created.Id;
+            await LoadDetailAsync(created.Id);
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveInvoice()
+    {
+        if (_selectedDetail == null) return;
+        _saving = true;
+        StateHasChanged();
+        var req = new UpdatePurchaseInvoiceRequest(_selectedDetail.InvoiceNumber, _editInvoiceDate, _editDueDate, _editStatus, null);
+        var ok = await Api.UpdatePurchaseInvoiceAsync(Auth.BaseUrl, _selectedDetail.Id, req);
+        _saving = false;
+        if (ok) await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task ConvertToWorkOrder()
+    {
+        if (_selectedDetail == null) return;
+
+        _convertWorkOrderError = null;
+        _convertWorkOrderSuccess = false;
+        _createdWorkOrderNumber = null;
+        _convertingToWorkOrder = true;
+        StateHasChanged();
+
+        try
+        {
+            // Save invoice first (important)
+            var req = new UpdatePurchaseInvoiceRequest(_selectedDetail.InvoiceNumber, _editInvoiceDate, _editDueDate, _editStatus, null);
+            var ok = await Api.UpdatePurchaseInvoiceAsync(Auth.BaseUrl, _selectedDetail.Id, req);
+            if (!ok)
+            {
+                _convertWorkOrderError = "Failed to save invoice before converting to work order.";
+                _convertingToWorkOrder = false;
+                StateHasChanged();
+                return;
+            }
+
+            var (wo, err) = await Api.CreateWorkOrderFromInvoiceAsync(Auth.BaseUrl, _selectedDetail.Id, Auth.CurrentUser?.Username);
+            if (wo == null)
+            {
+                _convertWorkOrderError = err ?? "Failed to create work order.";
+                _convertingToWorkOrder = false;
+                StateHasChanged();
+                return;
+            }
+
+            _createdWorkOrderNumber = wo.OrderNumber;
+            _convertWorkOrderSuccess = true;
+            _convertingToWorkOrder = false;
+            StateHasChanged();
+
+            Nav.NavigateTo($"/workorders?id={wo.Id}");
+        }
+        catch (Exception ex)
+        {
+            _convertWorkOrderError = ex.Message;
+            _convertingToWorkOrder = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetStatusClass(string status) => status switch
+    {
+        "Draft" => "bg-slate-500/20 text-slate-400",
+        "Sent" => "bg-blue-500/20 text-blue-400",
+        "Paid" => "bg-emerald-500/20 text-emerald-400",
+        _ => "bg-slate-500/20 text-slate-400"
+    };
+
+    private static string FormatInr(decimal value) => "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
+}

@@ -46,7 +46,9 @@ public record QuotationRevisionDto(
     string ChangedBy,
     DateTime ChangedAt,
     string? ChangeDetails,
-    string? AttachmentFileName);
+    string? AttachmentFileName,
+    DateTime? SentToCustomerAt,
+    string? SentToCustomerBy);
 
 public record QuotationRevisionDetailDto(
     Guid Id,
@@ -65,4 +67,18 @@ public record QuotationRevisionDetailDto(
     string? Attachments,
     string? Status,
     decimal? Amount,
-    IReadOnlyList<QuotationLineItemDto> LineItems);
+    IReadOnlyList<QuotationLineItemDto> LineItems,
+    DateTime? SentToCustomerAt,
+    string? SentToCustomerBy);
+
+public record SendRevisionResponse(
+    QuotationRevisionDto Revision,
+    PurchaseOrderCreatedDto PurchaseOrder);
+
+public record PurchaseOrderCreatedDto(
+    Guid Id,
+    string OrderNumber,
+    Guid? QuotationId,
+    Guid? QuotationRevisionId,
+    string Status,
+    decimal? Value);

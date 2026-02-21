@@ -21,6 +21,17 @@ public class ApiClient
 
     private static string Url(string baseUrl, string path) => $"{baseUrl.TrimEnd('/')}{path}";
 
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!string.IsNullOrWhiteSpace(body)) return body.Trim().Trim('"');
+        }
+        catch { /* ignore */ }
+        return $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".Trim();
+    }
+
     public async Task<(AuthUser? User, string? Error)> LoginAsync(string baseUrl, string username, string password, CancellationToken ct = default)
     {
         try
@@ -243,6 +254,294 @@ public class ApiClient
             return await response.Content.ReadFromJsonAsync<QuotationDetailDto>(opts, ct);
         }
         catch { return null; }
+    }
+
+    public async Task<SendRevisionResponse?> SendRevisionToCustomerAsync(string baseUrl, Guid quotationId, Guid revisionId, string? sentBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new { sentBy });
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/quotations/{quotationId}/revisions/{revisionId}/send"), content, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<SendRevisionResponse>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<PurchaseOrderListDto>?> GetPurchaseOrdersAsync(string baseUrl, Guid? quotationId = null, string? customerPONumber = null, string? status = null, string? client = null, int limit = 100, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string>();
+            if (quotationId.HasValue) q.Add($"quotationId={quotationId.Value}");
+            if (!string.IsNullOrEmpty(customerPONumber)) q.Add($"customerPONumber={Uri.EscapeDataString(customerPONumber)}");
+            if (!string.IsNullOrEmpty(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (!string.IsNullOrEmpty(client)) q.Add($"client={Uri.EscapeDataString(client)}");
+            q.Add($"limit={limit}");
+            var path = "/api/purchaseorders?" + string.Join("&", q);
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<PurchaseOrderListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<PurchaseOrderDetailDto?> GetPurchaseOrderByIdAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/purchaseorders/{id}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<PurchaseOrderDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<PurchaseOrderCompareDto?> GetPurchaseOrderCompareAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/purchaseorders/{id}/compare"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<PurchaseOrderCompareDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<PurchaseOrderDetailDto?> CreatePurchaseOrderAsync(string baseUrl, CreatePurchaseOrderRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/purchaseorders"), content, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<PurchaseOrderDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<bool> UpdatePurchaseOrderAsync(string baseUrl, Guid id, UpdatePurchaseOrderRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync(Url(baseUrl, $"/api/purchaseorders/{id}"), content, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    public async Task<IReadOnlyList<PurchaseInvoiceListDto>?> GetPurchaseInvoicesAsync(string baseUrl, Guid? purchaseOrderId = null, string? status = null, string? invoiceNumber = null, int limit = 100, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string>();
+            if (purchaseOrderId.HasValue) q.Add($"purchaseOrderId={purchaseOrderId.Value}");
+            if (!string.IsNullOrEmpty(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (!string.IsNullOrEmpty(invoiceNumber)) q.Add($"invoiceNumber={Uri.EscapeDataString(invoiceNumber)}");
+            q.Add($"limit={limit}");
+            var path = "/api/purchaseinvoices?" + string.Join("&", q);
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<PurchaseInvoiceListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<PurchaseInvoiceDetailDto?> GetPurchaseInvoiceByIdAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/purchaseinvoices/{id}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<PurchaseInvoiceDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<PurchaseInvoiceDetailDto?> CreatePurchaseInvoiceAsync(string baseUrl, CreatePurchaseInvoiceRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/purchaseinvoices"), content, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<PurchaseInvoiceDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(PurchaseInvoiceDetailDto? Invoice, string? Error)> CreatePurchaseInvoiceWithErrorAsync(string baseUrl, CreatePurchaseInvoiceRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/purchaseinvoices"), content, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorText = await response.Content.ReadAsStringAsync(ct);
+                var msg = string.IsNullOrWhiteSpace(errorText)
+                    ? $"Failed to create invoice (HTTP {(int)response.StatusCode})."
+                    : errorText.Trim().Trim('"');
+                return (null, msg);
+            }
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<PurchaseInvoiceDetailDto>(opts, ct);
+            return dto == null ? (null, "Failed to read invoice response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<bool> UpdatePurchaseInvoiceAsync(string baseUrl, Guid id, UpdatePurchaseInvoiceRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync(Url(baseUrl, $"/api/purchaseinvoices/{id}"), content, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    public async Task<(WorkOrderListDto? WorkOrder, string? Error)> CreateWorkOrderFromInvoiceAsync(string baseUrl, Guid purchaseInvoiceId, string? createdBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(createdBy)
+                ? $"/api/workorders/from-invoice/{purchaseInvoiceId}"
+                : $"/api/workorders/from-invoice/{purchaseInvoiceId}?createdBy={Uri.EscapeDataString(createdBy)}";
+
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorText = await response.Content.ReadAsStringAsync(ct);
+                var msg = string.IsNullOrWhiteSpace(errorText)
+                    ? $"Failed to create work order (HTTP {(int)response.StatusCode})."
+                    : errorText.Trim().Trim('"');
+                return (null, msg);
+            }
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<WorkOrderListDto>(opts, ct);
+            return dto == null ? (null, "Failed to read work order response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<UserListDto>?> GetUsersAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/users"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<UserListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<WorkOrderListDto>?> GetWorkOrdersAsync(string baseUrl, string? status = null, string? assignedTo = null, int limit = 200, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string>();
+            if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (!string.IsNullOrWhiteSpace(assignedTo)) q.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+            q.Add($"limit={limit}");
+            var path = "/api/workorders?" + string.Join("&", q);
+
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<WorkOrderListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<(IReadOnlyList<WorkOrderListDto>? WorkOrders, string? Error)> GetWorkOrdersWithErrorAsync(string baseUrl, string? status = null, string? assignedTo = null, int limit = 200, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string>();
+            if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (!string.IsNullOrWhiteSpace(assignedTo)) q.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+            q.Add($"limit={limit}");
+            var path = "/api/workorders?" + string.Join("&", q);
+
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<List<WorkOrderListDto>>(opts, ct) ?? [];
+            return (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<WorkOrderDetailDto?> GetWorkOrderByIdAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/workorders/{id}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<WorkOrderDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(WorkOrderDetailDto? WorkOrder, string? Error)> GetWorkOrderByIdWithErrorAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/workorders/{id}"), ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<WorkOrderDetailDto>(opts, ct);
+            return dto == null ? (null, "Failed to read work order response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<bool> UpdateWorkOrderAsync(string baseUrl, Guid id, UpdateWorkOrderRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync(Url(baseUrl, $"/api/workorders/{id}"), content, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 }
 

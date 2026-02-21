@@ -8,6 +8,31 @@
 <PageTitle>Quotation &amp; Revision History - HeatconERP</PageTitle>
 
 <div class="-m-6 flex flex-col min-h-[calc(100vh-5.5rem)]">
+    <!-- Purchase Order Created Notification -->
+    @if (_showPOCreatedNotification && _createdPurchaseOrder != null)
+    {
+        <div class="fixed top-20 right-6 z-50 bg-emerald-500/90 backdrop-blur-sm border border-emerald-400/50 rounded-lg shadow-xl p-4 max-w-md animate-slide-in-right">
+            <div class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-emerald-100 text-2xl shrink-0">check_circle</span>
+                <div class="flex-1 min-w-0">
+                    <h4 class="text-sm font-bold text-white mb-1">Revision Sent & Purchase Order Created</h4>
+                    <p class="text-xs text-emerald-100 mb-3">Draft Purchase Order <strong class="font-mono">@_createdPurchaseOrder.OrderNumber</strong> has been created and linked to this quotation.</p>
+                    <div class="flex items-center gap-2">
+                        <button class="bg-white/20 hover:bg-white/30 text-white text-xs font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors" @onclick="@(() => NavigateToPurchaseOrder(_createdPurchaseOrder.Id))">
+                            <span class="material-symbols-outlined text-sm">open_in_new</span>
+                            View Purchase Order
+                        </button>
+                        <button class="text-emerald-100 hover:text-white text-xs font-semibold px-3 py-1.5" @onclick="DismissPONotification">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+                <button class="text-emerald-100 hover:text-white shrink-0" @onclick="DismissPONotification">
+                    <span class="material-symbols-outlined text-sm">close</span>
+                </button>
+            </div>
+        </div>
+    }
     <main class="flex-1 flex flex-col overflow-hidden">
         <!-- Filter & Header Row -->
         <div class="bg-[#1a2233] border-b border-[#344465] px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
@@ -233,12 +258,17 @@
                             <div class="space-y-2">
                                 @foreach (var rev in _selectedDetail.Revisions.OrderByDescending(r => r.ChangedAt))
                                 {
+                                    var rev1 = rev;
                                     <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#243047]/50 border border-[#344465]/50 hover:bg-[#243047] hover:border-[#195de6]/50 cursor-pointer transition-colors @(_viewingRevisionDetail?.Id == rev.Id ? "border-[#195de6] bg-[#195de6]/10" : "")" @onclick="@(() => SelectRevisionAsync(_selectedDetail.Id, rev.Id))">
                                         <div class="flex items-center gap-3 min-w-0">
                                             <span class="bg-[#195de6]/20 text-[#195de6] px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0">@rev.Version</span>
                                             <div class="min-w-0">
                                                 <p class="text-[11px] font-medium text-slate-200 truncate">@rev.ChangedBy @rev.Action</p>
                                                 <p class="text-[10px] text-slate-500">@FormatRevisionDate(rev.ChangedAt)</p>
+                                                @if (rev.SentToCustomerAt.HasValue)
+                                                {
+                                                    <p class="text-[9px] text-emerald-400/90 mt-0.5">Sent @FormatRevisionDate(rev.SentToCustomerAt.Value) @(string.IsNullOrEmpty(rev.SentToCustomerBy) ? "" : "by " + rev.SentToCustomerBy)</p>
+                                                }
                                             </div>
                                         </div>
                                         @if (!string.IsNullOrEmpty(rev.ChangeDetails))
@@ -383,10 +413,38 @@
                         <button class="text-[#195de6] hover:underline font-bold text-[10px] flex items-center gap-1 mb-3" @onclick="ClearRevisionView">
                             <span class="material-symbols-outlined text-sm">arrow_back</span> Back to current
                         </button>
-                        <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
-                            <span class="material-symbols-outlined text-sm text-[#195de6]">history</span> Revision @_viewingRevisionDetail.Version
-                        </h3>
+                        <div class="flex items-center justify-between gap-3 mb-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm text-[#195de6]">history</span> Revision @_viewingRevisionDetail.Version
+                            </h3>
+                            @if (_viewingRevisionDetail.SentToCustomerAt.HasValue)
+                            {
+                                <span class="text-[9px] font-bold text-emerald-400 uppercase px-2 py-1 rounded border border-emerald-500/50 bg-emerald-500/10">Sent to Customer</span>
+                            }
+                            else
+                            {
+                                var revDto = _selectedDetail?.Revisions?.FirstOrDefault(r => r.Id == _viewingRevisionDetail.Id);
+                                @if (revDto != null)
+                                {
+                                    <button class="text-[9px] font-bold text-[#195de6] hover:bg-[#195de6]/20 px-2 py-1 rounded border border-[#195de6]/50 uppercase flex items-center gap-1" @onclick="@(() => SendRevisionToCustomerAsync(revDto))" disabled="@_sendingRevision">
+                                    @if (_sendingRevision && _sendingRevisionId == revDto.Id)
+                                    {
+                                        <span>Sending...</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="material-symbols-outlined text-xs">send</span>
+                                        <span>Send to Customer</span>
+                                    }
+                                </button>
+                                }
+                            }
+                        </div>
                         <p class="text-[10px] text-slate-500 mt-1">@_viewingRevisionDetail.ChangedBy • @_viewingRevisionDetail.Action • @FormatRevisionDate(_viewingRevisionDetail.ChangedAt)</p>
+                        @if (_viewingRevisionDetail.SentToCustomerAt.HasValue)
+                        {
+                            <p class="text-[9px] text-emerald-400/90 mt-1">Sent @FormatRevisionDate(_viewingRevisionDetail.SentToCustomerAt.Value) @(string.IsNullOrEmpty(_viewingRevisionDetail.SentToCustomerBy) ? "" : "by " + _viewingRevisionDetail.SentToCustomerBy)</p>
+                        }
                     </div>
                     <div class="flex-1 overflow-auto industrial-scrollbar p-4 space-y-4">
                         <div>
@@ -501,11 +559,40 @@
                                 <div class="relative space-y-6 border-l border-[#344465] ml-2">
                                     @foreach (var (rev, isFirst) in _selectedDetail.Revisions.Select((r, i) => (r, i == 0)))
                                     {
-                                        <div class="relative pl-5 cursor-pointer" @onclick="@(() => SelectRevisionAsync(_selectedDetail.Id, rev.Id))">
+                                        var rev1 = rev;
+                                        <div class="relative pl-5">
                                             <span class="absolute -left-[5px] top-1 h-2 w-2 rounded-full @(isFirst ? "bg-[#195de6] ring-4 ring-[#195de6]/20" : "bg-[#344465]")"></span>
                                             <div class="text-[10px] font-mono text-slate-500 mb-1">@FormatRevisionDate(rev.ChangedAt)</div>
                                             <div class="bg-[#1a2233] border border-[#344465] rounded p-3 hover:border-[#195de6]/50 transition-colors @(_viewingRevisionDetail?.Id == rev.Id ? "border-[#195de6]" : "")">
-                                                <p class="text-[11px] font-semibold text-slate-200"><span class="text-[#195de6]">@rev.ChangedBy</span> @rev.Action @rev.Version <span class="material-symbols-outlined text-slate-500 text-xs align-middle">visibility</span></p>
+                                                <div class="flex items-start justify-between gap-2 mb-1">
+                                                    <p class="text-[11px] font-semibold text-slate-200 flex-1 cursor-pointer" @onclick="@(() => SelectRevisionAsync(_selectedDetail.Id, rev.Id))">
+                                                        <span class="text-[#195de6]">@rev.ChangedBy</span> @rev.Action @rev.Version <span class="material-symbols-outlined text-slate-500 text-xs align-middle">visibility</span>
+                                                    </p>
+                                                    <div class="flex items-center gap-1 shrink-0" @onclick:stopPropagation="true">
+                                                        @if (rev.SentToCustomerAt.HasValue)
+                                                        {
+                                                            <span class="text-[9px] font-bold text-emerald-400 uppercase px-1.5 py-0.5 rounded border border-emerald-500/50 bg-emerald-500/10" title="Linked to incoming PO">Sent</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="text-[9px] font-bold text-[#195de6] hover:bg-[#195de6]/20 px-1.5 py-0.5 rounded border border-[#195de6]/50 uppercase flex items-center gap-1" @onclick="@(() => SendRevisionToCustomerAsync(rev1))" disabled="@_sendingRevision">
+                                                                @if (_sendingRevision && _sendingRevisionId == rev1.Id)
+                                                                {
+                                                                    <span>…</span>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span class="material-symbols-outlined text-xs">send</span>
+                                                                    <span>Send</span>
+                                                                }
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                @if (rev.SentToCustomerAt.HasValue)
+                                                {
+                                                    <p class="text-[9px] text-emerald-400/90 mb-1">Sent @FormatRevisionDate(rev.SentToCustomerAt.Value) @(string.IsNullOrEmpty(rev.SentToCustomerBy) ? "" : "by " + rev.SentToCustomerBy)</p>
+                                                }
                                                 @if (!string.IsNullOrEmpty(rev.ChangeDetails))
                                                 {
                                                     <p class="text-[10px] text-slate-500 mt-1">@rev.ChangeDetails</p>
@@ -558,6 +645,10 @@
     private bool _loading = true;
     private List<EditableLineItem> _editingLineItems = [];
     private HashSet<string> _clientOptions = [];
+    private bool _sendingRevision;
+    private Guid _sendingRevisionId;
+    private PurchaseOrderCreatedDto? _createdPurchaseOrder;
+    private bool _showPOCreatedNotification;
 
     private decimal _subtotal => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice);
     private decimal _totalTax => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice * (x.TaxPercent / 100m));
@@ -598,6 +689,44 @@
     private void ClearRevisionView()
     {
         _viewingRevisionDetail = null;
+        StateHasChanged();
+    }
+
+    private async Task SendRevisionToCustomerAsync(QuotationRevisionDto rev)
+    {
+        if (_selectedDetail == null) return;
+        _sendingRevision = true;
+        _sendingRevisionId = rev.Id;
+        _createdPurchaseOrder = null;
+        _showPOCreatedNotification = false;
+        StateHasChanged();
+        var response = await Api.SendRevisionToCustomerAsync(Auth.BaseUrl, _selectedDetail.Id, rev.Id, Auth.CurrentUser?.Username);
+        _sendingRevision = false;
+        _sendingRevisionId = Guid.Empty;
+        if (response != null)
+        {
+            _createdPurchaseOrder = response.PurchaseOrder;
+            _showPOCreatedNotification = true;
+            await LoadDetailAsync(_selectedDetail.Id);
+            // Auto-hide notification after 8 seconds
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(8000);
+                _showPOCreatedNotification = false;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void NavigateToPurchaseOrder(Guid poId)
+    {
+        Nav.NavigateTo($"/purchaseorders?id={poId}");
+    }
+
+    private void DismissPONotification()
+    {
+        _showPOCreatedNotification = false;
         StateHasChanged();
     }
 

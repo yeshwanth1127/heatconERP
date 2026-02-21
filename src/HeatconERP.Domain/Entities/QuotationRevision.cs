@@ -21,5 +21,9 @@ public class QuotationRevision
     public decimal? SnapshotAmount { get; set; }
     public string? SnapshotLineItemsJson { get; set; }  // JSON array of line items
 
+    /// <summary>When this revision was sent to customer (for linking incoming PO).</summary>
+    public DateTime? SentToCustomerAt { get; set; }
+    public string? SentToCustomerBy { get; set; }
+
     public Quotation Quotation { get; set; } = null!;
 }

@@ -175,9 +175,28 @@ namespace HeatconERP.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("CustomerPONumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DeliveryTerms")
+                        .HasColumnType("text");
+
                     b.Property<string>("OrderNumber")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime>("PODate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentTerms")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("QuotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("QuotationRevisionId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -188,7 +207,129 @@ namespace HeatconERP.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("QuotationId");
+
+                    b.HasIndex("QuotationRevisionId");
+
                     b.ToTable("PurchaseOrders");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseOrderLineItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttachmentPath")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PartNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("TaxPercent")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.ToTable("PurchaseOrderLineItems");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedByUserName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("InvoiceDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderId");
+
+                    b.ToTable("PurchaseInvoices");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseInvoiceLineItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal?>("LineTotal")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("PartNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PurchaseInvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("TaxPercent")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseInvoiceId");
+
+                    b.ToTable("PurchaseInvoiceLineItems");
                 });
 
             modelBuilder.Entity("HeatconERP.Domain.Entities.QualityInspection", b =>
@@ -368,6 +509,12 @@ namespace HeatconERP.Infrastructure.Migrations
                     b.Property<decimal?>("SnapshotAmount")
                         .HasColumnType("numeric");
 
+                    b.Property<DateTime?>("SentToCustomerAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SentToCustomerBy")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("QuotationId");
@@ -411,6 +558,9 @@ namespace HeatconERP.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("PurchaseInvoiceId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Stage")
                         .IsRequired()
                         .HasColumnType("text");
@@ -421,7 +571,18 @@ namespace HeatconERP.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PurchaseInvoiceId");
+
                     b.ToTable("WorkOrders");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.WorkOrder", b =>
+                {
+                    b.HasOne("HeatconERP.Domain.Entities.PurchaseInvoice", "PurchaseInvoice")
+                        .WithMany()
+                        .HasForeignKey("PurchaseInvoiceId");
+
+                    b.Navigation("PurchaseInvoice");
                 });
 
             modelBuilder.Entity("HeatconERP.Domain.Entities.Quotation", b =>
@@ -453,6 +614,60 @@ namespace HeatconERP.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Quotation");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseOrder", b =>
+                {
+                    b.HasOne("HeatconERP.Domain.Entities.Quotation", "Quotation")
+                        .WithMany()
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("HeatconERP.Domain.Entities.QuotationRevision", "QuotationRevision")
+                        .WithMany()
+                        .HasForeignKey("QuotationRevisionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("LineItems");
+
+                    b.Navigation("Quotation");
+
+                    b.Navigation("QuotationRevision");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseOrderLineItem", b =>
+                {
+                    b.HasOne("HeatconERP.Domain.Entities.PurchaseOrder", "PurchaseOrder")
+                        .WithMany("LineItems")
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseOrder");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseInvoice", b =>
+                {
+                    b.HasOne("HeatconERP.Domain.Entities.PurchaseOrder", "PurchaseOrder")
+                        .WithMany()
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseOrder");
+
+                    b.Navigation("LineItems");
+                });
+
+            modelBuilder.Entity("HeatconERP.Domain.Entities.PurchaseInvoiceLineItem", b =>
+                {
+                    b.HasOne("HeatconERP.Domain.Entities.PurchaseInvoice", "PurchaseInvoice")
+                        .WithMany("LineItems")
+                        .HasForeignKey("PurchaseInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseInvoice");
                 });
 
             modelBuilder.Entity("HeatconERP.Domain.Entities.Quotation", b =>

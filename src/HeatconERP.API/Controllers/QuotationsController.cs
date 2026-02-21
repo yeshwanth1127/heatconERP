@@ -14,6 +14,35 @@ public class QuotationsController : ControllerBase
 
     public QuotationsController(HeatconDbContext db) => _db = db;
 
+    /// <summary>
+    /// Calculates the next revision version for a quotation following semantic versioning:
+    /// - Increments minor version for updates to the same major version
+    /// - Returns v{major}.{count of revisions with this major version}
+    /// </summary>
+    private string GetNextRevisionVersion(Quotation q)
+    {
+        // Extract major version from q.Version (e.g., 1 from "v1.0")
+        var majorMatch = System.Text.RegularExpressions.Regex.Match(q.Version, @"v(\d+)");
+        int major = 1;
+        if (majorMatch.Success && int.TryParse(majorMatch.Groups[1].Value, out var m))
+        {
+            major = m;
+        }
+
+        // Count revisions with this major version to determine next minor
+        int minorCount = 0;
+        foreach (var rev in q.Revisions)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(rev.Version, @"v(\d+)\.(\d+)");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var revMajor) && revMajor == major)
+            {
+                minorCount++;
+            }
+        }
+
+        return $"v{major}.{minorCount}";
+    }
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<QuotationListDto>>> Get(
         [FromQuery] Guid? enquiryId,
@@ -67,7 +96,7 @@ public class QuotationsController : ControllerBase
         var lineItems = q.LineItems.Select(li => new QuotationLineItemDto(
             li.Id, li.SortOrder, li.PartNumber, li.Description, li.Quantity, li.UnitPrice, li.TaxPercent, li.AttachmentPath)).ToList();
         var revisions = q.Revisions.Select(r => new QuotationRevisionDto(
-            r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName)).ToList();
+            r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName, r.SentToCustomerAt, r.SentToCustomerBy)).ToList();
 
         return Ok(new QuotationDetailDto(
             q.Id, q.ReferenceNumber, q.EnquiryId, q.Enquiry?.EnquiryNumber,
@@ -118,14 +147,139 @@ public class QuotationsController : ControllerBase
             rev.SnapshotAttachments,
             rev.SnapshotStatus,
             rev.SnapshotAmount,
-            lineItems));
+            lineItems,
+            rev.SentToCustomerAt,
+            rev.SentToCustomerBy));
+    }
+
+    [HttpPost("{quotationId:guid}/revisions/{revisionId:guid}/send")]
+    public async Task<ActionResult<SendRevisionResponse>> SendRevisionToCustomer(Guid quotationId, Guid revisionId, [FromBody] SendRevisionRequest? req, CancellationToken ct)
+    {
+        var rev = await _db.QuotationRevisions
+            .Include(r => r.Quotation)
+            .ThenInclude(q => q!.LineItems.OrderBy(li => li.SortOrder))
+            .FirstOrDefaultAsync(r => r.Id == revisionId && r.QuotationId == quotationId, ct);
+        if (rev == null) return NotFound();
+        
+        rev.SentToCustomerAt = DateTime.UtcNow;
+        rev.SentToCustomerBy = req?.SentBy ?? "System";
+        
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            OccurredAt = DateTime.UtcNow,
+            Tag = "AUDIT",
+            Message = $"Quotation {rev.Quotation.ReferenceNumber} revision {rev.Version} sent to customer by {rev.SentToCustomerBy}"
+        });
+
+        // Create a draft Purchase Order linked to this quotation and revision
+        var year = DateTime.UtcNow.Year;
+        var count = await _db.PurchaseOrders.CountAsync(p => p.CreatedAt.Year == year, ct);
+        var orderNumber = $"PO-{year % 100}{count + 1:D4}";
+
+        var po = new PurchaseOrder
+        {
+            Id = Guid.NewGuid(),
+            OrderNumber = orderNumber,
+            QuotationId = rev.QuotationId,
+            QuotationRevisionId = rev.Id,
+            CustomerPONumber = "", // Empty for draft, to be filled when customer PO is received
+            PODate = DateTime.UtcNow,
+            DeliveryTerms = null,
+            PaymentTerms = null,
+            Status = "Draft",
+            Value = 0,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByUserName = rev.SentToCustomerBy ?? "System"
+        };
+
+        // Copy line items from revision snapshot or quotation
+        var sortOrder = 0;
+        decimal subtotal = 0;
+        decimal totalTax = 0;
+        
+        if (!string.IsNullOrEmpty(rev.SnapshotLineItemsJson))
+        {
+            try
+            {
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var snapshotItems = JsonSerializer.Deserialize<List<SnapshotLineItem>>(rev.SnapshotLineItemsJson, opts);
+                if (snapshotItems != null)
+                {
+                    foreach (var qli in snapshotItems)
+                    {
+                        var li = new PurchaseOrderLineItem
+                        {
+                            Id = Guid.NewGuid(),
+                            PurchaseOrderId = po.Id,
+                            SortOrder = sortOrder++,
+                            PartNumber = qli.PartNumber ?? "",
+                            Description = qli.Description ?? "",
+                            Quantity = qli.Quantity,
+                            UnitPrice = qli.UnitPrice,
+                            TaxPercent = qli.TaxPercent,
+                            AttachmentPath = qli.AttachmentPath
+                        };
+                        po.LineItems.Add(li);
+                        _db.PurchaseOrderLineItems.Add(li);
+                        subtotal += li.Quantity * li.UnitPrice;
+                        totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
+                    }
+                    po.Value = subtotal + totalTax;
+                }
+            }
+            catch { /* fallback to quotation line items below */ }
+        }
+        
+        // Fallback to quotation line items if snapshot not available
+        if (po.LineItems.Count == 0 && rev.Quotation != null)
+        {
+            foreach (var qli in rev.Quotation.LineItems)
+            {
+                var li = new PurchaseOrderLineItem
+                {
+                    Id = Guid.NewGuid(),
+                    PurchaseOrderId = po.Id,
+                    SortOrder = sortOrder++,
+                    PartNumber = qli.PartNumber,
+                    Description = qli.Description,
+                    Quantity = qli.Quantity,
+                    UnitPrice = qli.UnitPrice,
+                    TaxPercent = qli.TaxPercent,
+                    AttachmentPath = qli.AttachmentPath
+                };
+                po.LineItems.Add(li);
+                _db.PurchaseOrderLineItems.Add(li);
+                subtotal += li.Quantity * li.UnitPrice;
+                totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
+            }
+            po.Value = subtotal + totalTax;
+        }
+
+        _db.PurchaseOrders.Add(po);
+        
+        _db.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            OccurredAt = DateTime.UtcNow,
+            Tag = "AUDIT",
+            Message = $"Purchase order {po.OrderNumber} created automatically from quotation {rev.Quotation.ReferenceNumber} revision {rev.Version}"
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        // Return response with both revision and PO info
+        return Ok(new SendRevisionResponse(
+            new QuotationRevisionDto(rev.Id, rev.Version, rev.Action, rev.ChangedBy, rev.ChangedAt, rev.ChangeDetails, rev.AttachmentFileName, rev.SentToCustomerAt, rev.SentToCustomerBy),
+            new PurchaseOrderCreatedDto(po.Id, po.OrderNumber, po.QuotationId, po.QuotationRevisionId, po.Status, po.Value)
+        ));
     }
 
     [HttpPost]
     public async Task<ActionResult<QuotationDetailDto>> Create([FromBody] CreateQuotationRequest req, CancellationToken ct)
     {
         string refNum;
-        string version = "v1";
+        string version = "v1.0";
         string? clientName = null;
         string? projectName = null;
         string? enquiryNumber = null;
@@ -188,7 +342,7 @@ public class QuotationsController : ControllerBase
             created.ClientName, created.ProjectName, created.Description, created.Attachments, created.Version, created.CreatedAt, created.Amount, created.Status,
             created.CreatedByUserName,
             created.LineItems.OrderBy(li => li.SortOrder).Select(li => new QuotationLineItemDto(li.Id, li.SortOrder, li.PartNumber, li.Description, li.Quantity, li.UnitPrice, li.TaxPercent, li.AttachmentPath)).ToList(),
-            created.Revisions.OrderByDescending(r => r.ChangedAt).Select(r => new QuotationRevisionDto(r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName)).ToList()));
+            created.Revisions.OrderByDescending(r => r.ChangedAt).Select(r => new QuotationRevisionDto(r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName, r.SentToCustomerAt, r.SentToCustomerBy)).ToList()));
     }
 
     [HttpPut("{id:guid}")]
@@ -236,11 +390,12 @@ public class QuotationsController : ControllerBase
         var lineItemsForSnapshot = req.LineItems != null
             ? req.LineItems.Select(li => new { PartNumber = li.PartNumber ?? "", Description = li.Description ?? "", li.Quantity, li.UnitPrice, li.TaxPercent, AttachmentPath = li.AttachmentPath }).ToList()
             : q.LineItems.OrderBy(li => li.SortOrder).Select(li => new { li.PartNumber, li.Description, li.Quantity, li.UnitPrice, li.TaxPercent, li.AttachmentPath }).ToList();
+        var nextRevisionVersion = GetNextRevisionVersion(q);
         _db.QuotationRevisions.Add(new QuotationRevision
         {
             Id = Guid.NewGuid(),
             QuotationId = q.Id,
-            Version = q.Version,
+            Version = nextRevisionVersion,
             Action = "updated",
             ChangedBy = changedBy,
             ChangedAt = DateTime.UtcNow,
@@ -272,7 +427,7 @@ public class QuotationsController : ControllerBase
         var q = await _db.Quotations.Include(x => x.LineItems).Include(x => x.Revisions).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (q == null) return NotFound();
 
-        // Base new version on the highest existing revision (v1, v2, v3, ...)
+        // Determine next major version based on highest existing revision/version
         var allVersions = q.Revisions.Select(r => r.Version).Append(q.Version).ToList();
         var maxNum = 1;
         foreach (var v in allVersions)
@@ -281,7 +436,7 @@ public class QuotationsController : ControllerBase
             if (int.TryParse(numStr, out var num) && num > maxNum)
                 maxNum = num;
         }
-        var newVersion = $"v{maxNum + 1}";
+        var newVersion = $"v{maxNum + 1}.0";
 
         q.Version = newVersion;
 
@@ -365,7 +520,7 @@ public class QuotationsController : ControllerBase
             updated.ClientName, updated.ProjectName, updated.Description, updated.Attachments, updated.Version, updated.CreatedAt, updated.Amount, updated.Status,
             updated.CreatedByUserName,
             updated.LineItems.Select(li => new QuotationLineItemDto(li.Id, li.SortOrder, li.PartNumber, li.Description, li.Quantity, li.UnitPrice, li.TaxPercent, li.AttachmentPath)).ToList(),
-            updated.Revisions.Select(r => new QuotationRevisionDto(r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName)).ToList()));
+            updated.Revisions.Select(r => new QuotationRevisionDto(r.Id, r.Version, r.Action, r.ChangedBy, r.ChangedAt, r.ChangeDetails, r.AttachmentFileName, r.SentToCustomerAt, r.SentToCustomerBy)).ToList()));
     }
 }
 
@@ -377,6 +532,9 @@ public record LineItemInput(string PartNumber, string Description, int Quantity,
 public record QuotationListDto(Guid Id, string ReferenceNumber, Guid? EnquiryId, string? EnquiryNumber, string? ClientName, string? ProjectName, string Version, DateTime CreatedAt, decimal? Amount, string Status);
 public record QuotationDetailDto(Guid Id, string ReferenceNumber, Guid? EnquiryId, string? EnquiryNumber, string? ClientName, string? ProjectName, string? Description, string? Attachments, string Version, DateTime CreatedAt, decimal? Amount, string Status, string? CreatedByUserName, IReadOnlyList<QuotationLineItemDto> LineItems, IReadOnlyList<QuotationRevisionDto> Revisions);
 public record QuotationLineItemDto(Guid Id, int SortOrder, string PartNumber, string Description, int Quantity, decimal UnitPrice, decimal TaxPercent, string? AttachmentPath);
-public record QuotationRevisionDto(Guid Id, string Version, string Action, string ChangedBy, DateTime ChangedAt, string? ChangeDetails, string? AttachmentFileName);
-public record QuotationRevisionDetailDto(Guid Id, Guid QuotationId, string ReferenceNumber, Guid? EnquiryId, string? EnquiryNumber, string Version, string Action, string ChangedBy, DateTime ChangedAt, string? ChangeDetails, string? ClientName, string? ProjectName, string? Description, string? Attachments, string? Status, decimal? Amount, IReadOnlyList<QuotationLineItemDto> LineItems);
+public record SendRevisionRequest(string? SentBy);
+public record SendRevisionResponse(QuotationRevisionDto Revision, PurchaseOrderCreatedDto PurchaseOrder);
+public record PurchaseOrderCreatedDto(Guid Id, string OrderNumber, Guid? QuotationId, Guid? QuotationRevisionId, string Status, decimal? Value);
+public record QuotationRevisionDto(Guid Id, string Version, string Action, string ChangedBy, DateTime ChangedAt, string? ChangeDetails, string? AttachmentFileName, DateTime? SentToCustomerAt, string? SentToCustomerBy);
+public record QuotationRevisionDetailDto(Guid Id, Guid QuotationId, string ReferenceNumber, Guid? EnquiryId, string? EnquiryNumber, string Version, string Action, string ChangedBy, DateTime ChangedAt, string? ChangeDetails, string? ClientName, string? ProjectName, string? Description, string? Attachments, string? Status, decimal? Amount, IReadOnlyList<QuotationLineItemDto> LineItems, DateTime? SentToCustomerAt, string? SentToCustomerBy);
 internal record SnapshotLineItem(string PartNumber, string Description, int Quantity, decimal UnitPrice, decimal TaxPercent, string? AttachmentPath);

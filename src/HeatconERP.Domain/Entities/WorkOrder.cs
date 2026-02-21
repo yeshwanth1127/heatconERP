@@ -9,4 +9,11 @@ public class WorkOrder
     public WorkOrderStage Stage { get; set; }
     public string Status { get; set; } = "Active";
     public DateTime CreatedAt { get; set; }
+
+    public Guid? PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice? PurchaseInvoice { get; set; }
+
+    public string? AssignedToUserName { get; set; }
+
+    public ICollection<WorkOrderLineItem> LineItems { get; set; } = [];
 }

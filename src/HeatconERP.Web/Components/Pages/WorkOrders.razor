@@ -1,4 +1,318 @@
 @page "/workorders"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
 <PageTitle>Work Orders - HeatconERP</PageTitle>
-<h1>Work Orders</h1>
-<p class="text-muted">This module is under development.</p>
+
+<div class="-m-6 flex flex-col min-h-[calc(100vh-5.5rem)]">
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <div class="bg-[#1a2233] border-b border-[#344465] px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0">
+            <div class="flex items-center gap-3">
+                <h1 class="text-xl font-bold text-white leading-none">Work Orders</h1>
+                <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Production</span>
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden min-h-0">
+            <div class="flex-1 flex flex-col overflow-hidden border-r border-[#344465]">
+                <div class="p-4 grid grid-cols-4 gap-4 bg-[#111621]/50 shrink-0">
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_filterStatus" @bind:after="LoadAsync">
+                            <option value="">All</option>
+                            <option value="Active">Active</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Assigned</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 px-2 text-slate-200" placeholder="Filter by username" @bind="_filterAssignedTo" @bind:after="LoadAsync" />
+                    </div>
+                    <div class="flex items-end col-span-2">
+                        <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+                            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+                    @if (_loading)
+                    {
+                        <div class="flex items-center justify-center p-12 text-slate-400">Loading work orders...</div>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrEmpty(_listError))
+                        {
+                            <div class="p-4 text-red-400 text-xs border-b border-[#344465] bg-[#111621]/60">
+                                @_listError
+                            </div>
+                        }
+                        <table class="w-full border-collapse text-left text-xs">
+                            <thead class="sticky top-0 bg-[#243047] border-b border-[#344465] z-10">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">WO #</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Stage</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Status</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Assigned</th>
+                                    <th class="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight">Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (_list.Count == 0)
+                                {
+                                    <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No work orders found.</td></tr>
+                                }
+                                else
+                                {
+                                    @foreach (var wo in _list)
+                                    {
+                                        <tr class="border-b border-[#344465]/30 hover:bg-[#195de6]/5 cursor-pointer transition-colors border-l-2 @(wo.Id == _selectedId ? "bg-[#195de6]/10 border-[#195de6]" : "border-transparent")"
+                                            @onclick="@(() => SelectWorkOrder(wo.Id))">
+                                            <td class="px-4 py-3 font-bold text-[#195de6]">@wo.OrderNumber</td>
+                                            <td class="px-4 py-3 text-slate-300">@wo.Stage</td>
+                                            <td class="px-4 py-3 text-slate-300">@wo.Status</td>
+                                            <td class="px-4 py-3 text-slate-300">@(wo.AssignedToUserName ?? "—")</td>
+                                            <td class="px-4 py-3 text-slate-400">@wo.CreatedAt.ToString("dd MMM yyyy")</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+
+            <aside class="w-[460px] shrink-0 flex flex-col overflow-hidden bg-[#111621] border-l border-[#344465]">
+                @if (_selectedId == null && _selectedDetail == null)
+                {
+                    <div class="p-6 text-center text-slate-500 text-sm">Select a work order from the list to view details.</div>
+                }
+                else if (_selectedDetail == null)
+                {
+                    <div class="p-6 text-center text-slate-500 text-sm">
+                        <p class="mb-2">Unable to load work order details.</p>
+                        @if (!string.IsNullOrEmpty(_detailError))
+                        {
+                            <p class="text-red-400 text-xs">@_detailError</p>
+                        }
+                        <button class="mt-4 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-2 px-4 text-xs font-bold rounded"
+                                @onclick="@(() => _selectedId.HasValue ? SelectWorkOrder(_selectedId.Value) : Task.CompletedTask)">
+                            Retry
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="p-3 border-b border-[#344465] bg-[#243047]/30">
+                        <span class="text-xs font-bold text-[#195de6] uppercase tracking-wider">@_selectedDetail.OrderNumber</span>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto industrial-scrollbar p-4 space-y-4">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Stage</label>
+                                <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_editStage">
+                                    <option value="Planning">Planning</option>
+                                    <option value="Material">Material</option>
+                                    <option value="Assembly">Assembly</option>
+                                    <option value="Testing">Testing</option>
+                                    <option value="QC">QC</option>
+                                    <option value="Packing">Packing</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Status</label>
+                                <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_editStatus">
+                                    <option value="Active">Active</option>
+                                    <option value="On Hold">On Hold</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Assign to</label>
+                            <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-1.5 text-slate-200" @bind="_editAssignedTo">
+                                <option value="">-- Unassigned --</option>
+                                @foreach (var u in _users)
+                                {
+                                    <option value="@u.Username">@u.Username (@u.Role)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="pt-2">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2">Line Items</span>
+                            @if (_selectedDetail.LineItems == null || _selectedDetail.LineItems.Count == 0)
+                            {
+                                <p class="text-xs text-slate-500 py-2">No line items found.</p>
+                            }
+                            else
+                            {
+                                <table class="w-full border-collapse text-[11px]">
+                                    <thead>
+                                        <tr class="text-slate-500 border-b border-[#344465]">
+                                            <th class="text-left py-1 pr-2">Part / Desc</th>
+                                            <th class="text-right py-1 w-14">Qty</th>
+                                            <th class="text-right py-1 w-20">Price</th>
+                                            <th class="text-right py-1 w-16">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var li in _selectedDetail.LineItems)
+                                        {
+                                            <tr class="border-b border-[#344465]/30">
+                                                <td class="py-1 pr-2 text-slate-300">@li.PartNumber @(string.IsNullOrEmpty(li.Description) ? "" : " – " + li.Description)</td>
+                                                <td class="text-right py-1">@li.Quantity</td>
+                                                <td class="text-right py-1">@FormatInr(li.UnitPrice)</td>
+                                                <td class="text-right py-1 font-medium">@FormatInr(li.LineTotal ?? li.Quantity * li.UnitPrice * (1 + li.TaxPercent / 100m))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t border-[#344465] bg-[#243047]/30">
+                        @if (!string.IsNullOrEmpty(_saveError))
+                        {
+                            <p class="text-red-400 text-xs mb-2">@_saveError</p>
+                        }
+                        <button class="w-full bg-[#195de6] hover:bg-[#195de6]/90 text-white py-2 text-xs font-bold rounded flex items-center justify-center gap-2" @onclick="SaveAsync" disabled="@_saving">
+                            @if (_saving) { <span>Saving...</span> } else { <span class="material-symbols-outlined text-sm">save</span> <span>Save</span> }
+                        </button>
+                        @if (_saveSuccess)
+                        {
+                            <p class="text-emerald-400 text-xs mt-2 text-center">Saved successfully.</p>
+                        }
+                    </div>
+                }
+            </aside>
+        </div>
+    </main>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")]
+    private Guid? QueryId { get; set; }
+
+    private List<WorkOrderListDto> _list = [];
+    private WorkOrderDetailDto? _selectedDetail;
+    private Guid? _selectedId;
+    private bool _loading = true;
+
+    private string _filterStatus = "";
+    private string _filterAssignedTo = "";
+    private string? _listError;
+
+    private bool _saving;
+    private bool _saveSuccess;
+    private string? _saveError;
+    private string? _detailError;
+
+    private string _editStage = "Planning";
+    private string _editStatus = "Active";
+    private string? _editAssignedTo;
+
+    private List<UserListDto> _users = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAsync();
+        await LoadAsync();
+        if (QueryId.HasValue) await SelectWorkOrder(QueryId.Value);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (QueryId.HasValue && QueryId.Value != _selectedId)
+            await SelectWorkOrder(QueryId.Value);
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        var users = await Api.GetUsersAsync(Auth.BaseUrl);
+        _users = users?.ToList() ?? [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        StateHasChanged();
+        var (items, err) = await Api.GetWorkOrdersWithErrorAsync(Auth.BaseUrl,
+            status: string.IsNullOrWhiteSpace(_filterStatus) ? null : _filterStatus,
+            assignedTo: string.IsNullOrWhiteSpace(_filterAssignedTo) ? null : _filterAssignedTo,
+            limit: 500);
+        _list = items?.ToList() ?? [];
+        _listError = err;
+        _loading = false;
+
+        if (_selectedId.HasValue && !_list.Any(x => x.Id == _selectedId.Value))
+            _selectedId = null;
+
+        if (_selectedId.HasValue)
+            await LoadDetailAsync(_selectedId.Value);
+        else if (_list.Count > 0 && !_selectedId.HasValue)
+            await SelectWorkOrder(_list[0].Id);
+
+        StateHasChanged();
+    }
+
+    private async Task SelectWorkOrder(Guid id)
+    {
+        _selectedId = id;
+        _detailError = null;
+        // Keep URL in sync so refresh/deep-link works
+        if (QueryId != id)
+            Nav.NavigateTo($"/workorders?id={id}", replace: true);
+        await LoadDetailAsync(id);
+        StateHasChanged();
+    }
+
+    private async Task LoadDetailAsync(Guid id)
+    {
+        var (detail, err) = await Api.GetWorkOrderByIdWithErrorAsync(Auth.BaseUrl, id);
+        _selectedDetail = detail;
+        if (_selectedDetail == null) { _detailError = err ?? "Server returned no details."; return; }
+        _editStage = _selectedDetail.Stage;
+        _editStatus = _selectedDetail.Status;
+        _editAssignedTo = _selectedDetail.AssignedToUserName;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_selectedDetail == null) return;
+        _saving = true;
+        _saveSuccess = false;
+        _saveError = null;
+        StateHasChanged();
+
+        var req = new UpdateWorkOrderRequest(_editStage, _editStatus, _editAssignedTo);
+        var ok = await Api.UpdateWorkOrderAsync(Auth.BaseUrl, _selectedDetail.Id, req);
+        _saving = false;
+
+        if (!ok)
+        {
+            _saveError = "Failed to save work order.";
+            StateHasChanged();
+            return;
+        }
+
+        _saveSuccess = true;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private static string FormatInr(decimal value) => "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
+}
