@@ -24,7 +24,7 @@ else
 {
     <div class="bg-[#111621] border border-[#344465] p-4 mb-4">
         <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Select Work Order</label>
-        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_selectedWorkOrderId">
+        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_selectedWorkOrderId" @bind:after="OnWorkOrderChangedAsync">
             <option value="">-- Select Work Order --</option>
             @foreach (var wo in _workOrders)
             {
@@ -34,6 +34,55 @@ else
         <div class="text-[11px] text-slate-500 mt-2">
             Use this page to plan materials and raise SRS. Store Manager approves and allocates FIFO.
         </div>
+    </div>
+
+    <div class="bg-[#111621] border border-[#344465] p-4 mb-4">
+        <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">SRS for selected Work Order</div>
+                <div class="text-[11px] text-slate-500 mt-1">This list is loaded from the database and persists after refresh.</div>
+            </div>
+            <button class="px-3 py-2 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 text-xs font-bold rounded flex items-center gap-2"
+                    @onclick="LoadSrsForSelectedWoAsync"
+                    disabled="@_srsLoading">
+                <span class="material-symbols-outlined text-sm">refresh</span>
+                <span>@(_srsLoading ? "Loading..." : "Refresh")</span>
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_srsError))
+        {
+            <div class="mt-3 p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_srsError</div>
+        }
+        else if (!_selectedWorkOrderId.HasValue)
+        {
+            <div class="mt-3 text-xs text-slate-500">Select a work order to see its SRS.</div>
+        }
+        else if (_srsLoading)
+        {
+            <div class="mt-3 text-xs text-slate-500">Loading…</div>
+        }
+        else if (_srsForSelectedWo.Count == 0)
+        {
+            <div class="mt-3 text-xs text-slate-500">No SRS raised yet for this work order.</div>
+        }
+        else
+        {
+            <div class="mt-3 space-y-2">
+                @foreach (var s in _srsForSelectedWo)
+                {
+                    <div class="flex items-center justify-between gap-3 bg-[#243047]/20 border border-[#344465] rounded p-2">
+                        <div class="min-w-0">
+                            <div class="text-xs font-bold text-slate-200">SRS-@s.Id.ToString()[..8]</div>
+                            <div class="text-[11px] text-slate-500">@s.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                        </div>
+                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-white/10 bg-[#243047]/60 text-slate-200">
+                            @s.Status
+                        </span>
+                    </div>
+                }
+            </div>
+        }
     </div>
 
     <div class="bg-[#111621] border border-[#344465] p-4 mb-4">
@@ -134,6 +183,10 @@ else
     private List<WorkOrderCardDto> _workOrders = [];
     private Guid? _selectedWorkOrderId;
 
+    private bool _srsLoading;
+    private string? _srsError;
+    private List<SrsListDto> _srsForSelectedWo = [];
+
     private string _search = "";
     private List<MaterialTypeNodeDto>? _tree;
     private List<MaterialTypeNodeDto>? _treeFiltered;
@@ -155,8 +208,40 @@ else
         _tree = (await Api.GetInventoryMaterialTreeAsync(Auth.BaseUrl))?.ToList() ?? [];
         ApplyFilter();
 
+        await LoadSrsForSelectedWoAsync();
+
         _loading = false;
         StateHasChanged();
+    }
+
+    private async Task OnWorkOrderChangedAsync()
+    {
+        await LoadSrsForSelectedWoAsync();
+    }
+
+    private async Task LoadSrsForSelectedWoAsync()
+    {
+        _srsError = null;
+        _srsForSelectedWo = [];
+
+        if (!_selectedWorkOrderId.HasValue) { StateHasChanged(); return; }
+
+        _srsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var list = await Api.GetSrsListAsync(Auth.BaseUrl, workOrderId: _selectedWorkOrderId.Value, limit: 50);
+            _srsForSelectedWo = list?.OrderByDescending(x => x.CreatedAt).ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _srsError = ex.Message;
+        }
+        finally
+        {
+            _srsLoading = false;
+            StateHasChanged();
+        }
     }
 
     private void ApplyFilter()
@@ -223,6 +308,7 @@ else
             }
             _success = $"SRS created: SRS-{srs.Id.ToString()[..8]} (Status: {srs.Status}). Store Manager can approve from SRS tab.";
             _qty.Clear();
+            await LoadSrsForSelectedWoAsync();
         }
         finally
         {

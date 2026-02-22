@@ -87,31 +87,6 @@ public class ApiClient
         catch { return false; }
     }
 
-    public async Task<IReadOnlyList<QualityInspectionDto>?> GetQualityInspectionsAsync(string baseUrl, string? result = null, CancellationToken ct = default)
-    {
-        try
-        {
-            var path = string.IsNullOrEmpty(result) ? "/api/quality/inspections" : $"/api/quality/inspections?result={Uri.EscapeDataString(result)}";
-            var response = await _http.GetAsync(Url(baseUrl, path), ct);
-            if (!response.IsSuccessStatusCode) return null;
-            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            return await response.Content.ReadFromJsonAsync<List<QualityInspectionDto>>(opts, ct) ?? [];
-        }
-        catch { return null; }
-    }
-
-    public async Task<bool> CreateQualityInspectionAsync(string baseUrl, string workOrderNumber, string result, string? notes, string? inspectedBy, CancellationToken ct = default)
-    {
-        try
-        {
-            var body = JsonSerializer.Serialize(new { workOrderNumber, result, notes, inspectedBy });
-            var content = new StringContent(body, Encoding.UTF8, "application/json");
-            var response = await _http.PostAsync(Url(baseUrl, "/api/quality/inspections"), content, ct);
-            return response.IsSuccessStatusCode;
-        }
-        catch { return false; }
-    }
-
     public async Task<bool> SeedEnquiriesAsync(string baseUrl, CancellationToken ct = default)
     {
         try
@@ -234,7 +209,18 @@ public class ApiClient
     {
         try
         {
-            var body = JsonSerializer.Serialize(new { input.Status, input.ClientName, input.ProjectName, input.Description, input.Attachments, input.LineItems, input.ChangedBy });
+            var body = JsonSerializer.Serialize(new
+            {
+                input.Status,
+                input.ClientName,
+                input.ProjectName,
+                input.Description,
+                input.Attachments,
+                input.ManualPrice,
+                input.PriceBreakdown,
+                input.LineItems,
+                input.ChangedBy
+            });
             var content = new StringContent(body, Encoding.UTF8, "application/json");
             var response = await _http.PutAsync(Url(baseUrl, $"/api/quotations/{id}"), content, ct);
             return response.IsSuccessStatusCode;
@@ -242,11 +228,11 @@ public class ApiClient
         catch { return false; }
     }
 
-    public async Task<QuotationDetailDto?> GenerateQuotationRevisionAsync(string baseUrl, Guid id, List<LineItemInput>? lineItems, string? changeDetails, string? changedBy, CancellationToken ct = default)
+    public async Task<QuotationDetailDto?> GenerateQuotationRevisionAsync(string baseUrl, Guid id, List<LineItemInput>? lineItems, decimal? manualPrice, string? priceBreakdown, string? changeDetails, string? changedBy, CancellationToken ct = default)
     {
         try
         {
-            var body = JsonSerializer.Serialize(new { lineItems, changeDetails, changedBy });
+            var body = JsonSerializer.Serialize(new { lineItems, manualPrice, priceBreakdown, changeDetails, changedBy });
             var content = new StringContent(body, Encoding.UTF8, "application/json");
             var response = await _http.PostAsync(Url(baseUrl, $"/api/quotations/{id}/revision"), content, ct);
             if (!response.IsSuccessStatusCode) return null;
@@ -729,6 +715,242 @@ public class ApiClient
         catch { return null; }
     }
 
+    public async Task<IReadOnlyList<VendorDto>?> GetVendorsAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/vendor"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<VendorDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<(VendorDto? Vendor, string? Error)> CreateVendorAsync(string baseUrl, CreateVendorRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/vendor"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorDto>(opts, ct);
+            return dto == null ? (null, "Failed to read vendor response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<VendorInvoiceListItemDto>?> GetVendorInvoicesAsync(string baseUrl, string? status = null, int limit = 200, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string> { $"limit={limit}" };
+            if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            var path = "/api/vendor-invoices?" + string.Join("&", q);
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<VendorInvoiceListItemDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<VendorInvoiceDetailDto?> GetVendorInvoiceByIdAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/vendor-invoices/{id}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<VendorInvoiceDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(VendorInvoiceCreatedDto? Invoice, string? Error)> CreateVendorInvoiceFromPoAsync(string baseUrl, Guid vendorPoId, CreateVendorInvoiceFromPoRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/vendor-invoices/from-vendor-po/{vendorPoId}"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorInvoiceCreatedDto>(opts, ct);
+            return dto == null ? (null, "Failed to read invoice response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<(VendorInvoiceAcceptedDto? Result, string? Error)> AcceptVendorInvoiceAsync(string baseUrl, Guid vendorInvoiceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/accept"), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorInvoiceAcceptedDto>(opts, ct);
+            return dto == null ? (null, "Failed to read accept response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<(VendorPoCreatedDto? Po, string? Error)> CreateVendorPoFromSrsAsync(string baseUrl, Guid srsId, Guid vendorId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/srs/{srsId}/create-vendor-po?vendorId={vendorId}"), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorPoCreatedDto>(opts, ct);
+            return dto == null ? (null, "Failed to read PO response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<(VendorPoCreatedDto? Po, string? Error)> CreateVendorPoAsync(string baseUrl, CreateVendorPoRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/procurement/vendor-po"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorPoCreatedDto>(opts, ct);
+            return dto == null ? (null, "Failed to read vendor PO response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<(DirectGrnResultDto? Result, string? Error)> CreateDirectGrnAsync(string baseUrl, CreateDirectGrnRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, "/api/procurement/direct-grn"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<DirectGrnResultDto>(opts, ct);
+            return dto == null ? (null, "Failed to read GRN response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<string?> GetNextBatchNumberAsync(string baseUrl, Guid materialVariantId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/next-batch-number/{materialVariantId}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<NextBatchNumberDto>(opts, ct);
+            return dto?.BatchNumber;
+        }
+        catch { return null; }
+    }
+
+    public async Task<(SubmitGrnDraftResultDto? Result, string? Error)> SubmitGrnDraftAsync(string baseUrl, Guid grnId, SubmitGrnDraftRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/procurement/grns/{grnId}/submit-draft"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<SubmitGrnDraftResultDto>(opts, ct);
+            return dto == null ? (null, "Failed to read submit response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<GrnListItemDto>?> GetGrnsAsync(string baseUrl, int limit = 50, Guid? vendorId = null, DateTime? from = null, DateTime? to = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var q = new List<string> { $"limit={limit}" };
+            if (vendorId.HasValue) q.Add($"vendorId={vendorId.Value}");
+            if (from.HasValue) q.Add($"from={from.Value:O}");
+            if (to.HasValue) q.Add($"to={to.Value:O}");
+            var path = "/api/procurement/grns?" + string.Join("&", q);
+
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<GrnListItemDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<GrnDetailDto?> GetGrnByIdAsync(string baseUrl, Guid grnId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/grns/{grnId}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<GrnDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<VendorPoListItemDto>?> GetVendorPosAsync(string baseUrl, int limit = 100, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/vendor-pos?limit={limit}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<VendorPoListItemDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<VendorPoDetailDto?> GetVendorPoByIdAsync(string baseUrl, Guid vendorPoId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/vendor-pos/{vendorPoId}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<VendorPoDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
     public async Task<(SrsDto? Srs, string? Error)> CreateSrsAsync(string baseUrl, CreateSrsRequest req, CancellationToken ct = default)
     {
         try
@@ -811,8 +1033,117 @@ public class ApiClient
             return (false, ex.Message);
         }
     }
+
+    public async Task<(bool Ok, string? Error)> ConsumeSrsAsync(string baseUrl, Guid srsId, string? consumedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(consumedBy)
+                ? $"/api/srs/{srsId}/consume"
+                : $"/api/srs/{srsId}/consume?consumedBy={Uri.EscapeDataString(consumedBy)}";
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<QualityQueuesDto?> GetProductionManagerQualityQueuesAsync(string baseUrl, int limit = 500, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/quality/production-manager/queues?limit={limit}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<QualityQueuesDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<WorkOrderQualitySummaryDto?> GetWorkOrderQualitySummaryAsync(string baseUrl, Guid workOrderId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/workorders/{workOrderId}/quality"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<WorkOrderQualitySummaryDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(QualityCheckRecordedDto? Result, string? Error)> RecordWorkOrderQualityCheckAsync(string baseUrl, Guid workOrderId, RecordQualityCheckRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/workorders/{workOrderId}/quality/checks"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, await ReadErrorAsync(response, ct));
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<QualityCheckRecordedDto>(opts, ct);
+            return dto == null ? (null, "Failed to read QC response.") : (dto, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<NcrListDto>?> GetWorkOrderNcrsAsync(string baseUrl, Guid workOrderId, string? status = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(status)
+                ? $"/api/workorders/{workOrderId}/ncrs"
+                : $"/api/workorders/{workOrderId}/ncrs?status={Uri.EscapeDataString(status)}";
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<NcrListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<(bool Ok, string? Error)> CloseNcrAsync(string baseUrl, Guid workOrderId, Guid ncrId, CloseNcrRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(req);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/workorders/{workOrderId}/ncrs/{ncrId}/close"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteWorkOrderQualityAsync(string baseUrl, Guid workOrderId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.DeleteAsync(Url(baseUrl, $"/api/workorders/{workOrderId}/quality"), ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
 }
 
 public record LineItemInput(string PartNumber, string Description, int Quantity, decimal UnitPrice, decimal TaxPercent, string? AttachmentPath = null);
 
-public record UpdateQuotationInput(string? Status, string? ClientName, string? ProjectName, string? Description, string? Attachments, List<LineItemInput>? LineItems, string? ChangedBy);
+public record UpdateQuotationInput(string? Status, string? ClientName, string? ProjectName, string? Description, string? Attachments, decimal? ManualPrice, string? PriceBreakdown, List<LineItemInput>? LineItems, string? ChangedBy);

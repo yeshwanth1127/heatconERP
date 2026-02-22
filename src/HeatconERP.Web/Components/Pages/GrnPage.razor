@@ -1,4 +1,10 @@
 @page "/grn"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components
 
 <PageTitle>GRN - HeatconERP</PageTitle>
 
@@ -7,10 +13,734 @@
         <h1 class="text-xl font-bold text-white leading-none">GRN (Goods Receipt)</h1>
         <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Receiving</span>
     </div>
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+    </button>
 </div>
 
-<div class="bg-[#111621] border border-[#344465] p-4 text-slate-400 text-sm">
-    Placeholder: this will let Store create GRN from Vendor PO, enter Batch No + qty + QC, and on save it will create StockBatch + StockTransaction(GRN).
-</div>
+@if (_loading)
+{
+    <div class="p-8 text-slate-400">Loading...</div>
+}
+else
+{
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <section class="xl:col-span-7 bg-[#111621] border border-[#344465] overflow-hidden">
+            <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between gap-3">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">receipt_long</span>
+                    Create Direct GRN Receipt
+                </div>
+                <button class="bg-[#195de6] hover:bg-[#195de6]/90 text-white py-1.5 px-3 text-xs font-bold rounded flex items-center gap-2" @onclick="OpenAddVendor" type="button">
+                    <span class="material-symbols-outlined text-sm">add</span> Add Vendor
+                </button>
+            </div>
 
+            <div class="p-4 space-y-4">
+                @if (!string.IsNullOrEmpty(_formError))
+                {
+                    <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_formError</div>
+                }
+                @if (!string.IsNullOrEmpty(_formSuccess))
+                {
+                    <div class="p-3 border border-emerald-500/20 bg-emerald-900/10 text-emerald-300 text-xs">@_formSuccess</div>
+                }
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-[#243047]/20 border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Vendor</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_vendorId">
+                            <option value="">-- Select vendor --</option>
+                            @foreach (var v in _vendors.OrderBy(x => x.Name))
+                            {
+                                <option value="@v.Id">@v.Name</option>
+                            }
+                        </select>
+                        @if (_vendors.Count == 0)
+                        {
+                            <div class="text-[11px] text-slate-500 mt-2">No vendors yet. Click <span class="text-slate-200 font-semibold">Add Vendor</span>.</div>
+                        }
+                    </div>
+                    <div class="bg-[#243047]/20 border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Invoice Number</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_invoiceNumber" placeholder="e.g. INV-1023" />
+                    </div>
+                    <div class="bg-[#243047]/20 border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Received Date</label>
+                        <InputDate @bind-Value="_receivedDate" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" />
+                    </div>
+                </div>
+
+                <div class="bg-[#111621] border border-[#344465] p-4">
+                    <div class="flex flex-wrap items-end justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Materials (from Stock Overview)</div>
+                            <div class="text-xs text-slate-300 mt-1">
+                                @if (_draftGrn != null)
+                                {
+                                    <span>GRN draft loaded from invoice. Review batch/qty/price and submit.</span>
+                                }
+                                else
+                                {
+                                    <span>Select variants from the DB hierarchy, then enter Batch/Qty/Price per line.</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input class="bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200 w-[320px]"
+                                   placeholder="Search type / SKU / grade / size"
+                                   @bind="_search" @bind:after="ApplyFilter" />
+                            <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
+                                    @onclick="SubmitAsync"
+                                    disabled="@_submitting">
+                                @(_submitting ? "Submitting..." : "Submit GRN")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                @if (_draftGrn != null)
+                {
+                    <div class="space-y-4 max-h-[55vh] overflow-auto industrial-scrollbar pr-1">
+                        <div class="bg-[#111621] border border-[#344465] overflow-hidden">
+                            <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-start justify-between gap-4">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-bold text-slate-100">Draft Lines</div>
+                                    <div class="text-[11px] text-slate-500 mt-1">Invoice-driven receipt</div>
+                                </div>
+                                <div class="shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-[#243047]/60 border border-white/10 text-slate-300">
+                                    @_draftLines.Count lines
+                                </div>
+                            </div>
+
+                            <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                @foreach (var dl in _draftLines)
+                                {
+                                    <div class="border border-[#344465] bg-[#243047]/15 p-4">
+                                        <div class="text-xs font-bold text-[#195de6] truncate">@dl.Sku</div>
+                                        <div class="text-[11px] text-slate-400 mt-1 truncate">@dl.Grade · @dl.Size · @dl.Unit</div>
+
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3">
+                                            <div>
+                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Batch Number</label>
+                                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                       value="@dl.BatchNumber"
+                                                       @onchange="@((ChangeEventArgs e) => UpdateDraftBatch(dl.GrnLineItemId, e.Value))" />
+                                            </div>
+                                            <div>
+                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Qty Received</label>
+                                                <input type="number" step="0.01" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                       value="@dl.QuantityReceived"
+                                                       @onchange="@((ChangeEventArgs e) => UpdateDraftQty(dl.GrnLineItemId, e.Value))" />
+                                            </div>
+                                            <div>
+                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Unit Price</label>
+                                                <input type="number" step="0.01" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                       value="@dl.UnitPrice"
+                                                       @onchange="@((ChangeEventArgs e) => UpdateDraftPrice(dl.GrnLineItemId, e.Value))" />
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 flex justify-end">
+                                            <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
+                                                    @onclick="SubmitAsync"
+                                                    disabled="@_submitting">
+                                                @(_submitting ? "Submitting..." : "Submit GRN")
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_treeFiltered == null)
+                {
+                    <div class="p-8 text-center text-slate-500 text-sm">Loading materials...</div>
+                }
+                else if (_treeFiltered.Count == 0)
+                {
+                    <div class="p-8 text-center text-slate-500 text-sm">No materials found. Add materials from Stock Overview first.</div>
+                }
+                else
+                {
+                    <div class="space-y-4 max-h-[55vh] overflow-auto industrial-scrollbar pr-1">
+                        @foreach (var type in _treeFiltered)
+                        {
+                            <div class="bg-[#111621] border border-[#344465] overflow-hidden">
+                                <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-start justify-between gap-4">
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-bold text-slate-100">@type.Name</div>
+                                        @if (!string.IsNullOrWhiteSpace(type.Description))
+                                        {
+                                            <div class="text-[11px] text-slate-500 mt-1 truncate">@type.Description</div>
+                                        }
+                                    </div>
+                                    <div class="shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-[#243047]/60 border border-white/10 text-slate-300">
+                                        @type.Grades.Sum(g => g.Variants.Count) variants
+                                    </div>
+                                </div>
+
+                                <div class="p-4 space-y-3">
+                                    @foreach (var grade in type.Grades)
+                                    {
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">@grade.Grade</div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            @foreach (var v in grade.Variants)
+                                            {
+                                                var line = _lines.GetValueOrDefault(v.Id);
+                                                var isSelected = line != null;
+
+                                                <div class="border border-[#344465] bg-[#243047]/15 p-4">
+                                                    <div class="flex items-start justify-between gap-3">
+                                                        <div class="min-w-0">
+                                                            <div class="text-xs font-bold text-[#195de6] truncate">@v.SKU</div>
+                                                            <div class="text-[11px] text-slate-400 mt-1 truncate">@v.Grade · @v.Size · @v.Unit</div>
+                                                        </div>
+                                                        <button type="button"
+                                                                class="px-2 py-1 rounded text-[10px] font-bold border @(isSelected ? "bg-emerald-600/15 text-emerald-300 border-emerald-500/20" : "bg-[#111621] text-slate-300 border-white/10")"
+                                                                @onclick="@(() => ToggleVariantAsync(v.Id, v.SKU))">
+                                                            @(isSelected ? "Selected" : "Select")
+                                                        </button>
+                                                    </div>
+
+                                                    <div class="grid grid-cols-2 gap-2 mt-3 text-[11px]">
+                                                        <div class="bg-[#111621] border border-[#344465] p-2">
+                                                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Available</div>
+                                                            <div class="font-bold text-slate-200">@v.Available</div>
+                                                        </div>
+                                                        <div class="bg-[#111621] border border-[#344465] p-2">
+                                                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Received</div>
+                                                            <div class="font-bold text-slate-200">@v.Received</div>
+                                                        </div>
+                                                    </div>
+
+                                                    @if (isSelected)
+                                                    {
+                                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3">
+                                                            <div>
+                                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Batch Number</label>
+                                                                <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                                       value="@line!.BatchNumber"
+                                                                       @onchange="@((ChangeEventArgs e) => UpdateBatch(v.Id, e.Value))" />
+                                                            </div>
+                                                            <div>
+                                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Qty Received</label>
+                                                                <input type="number" step="0.01" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                                       value="@line!.QuantityReceived"
+                                                                       @onchange="@((ChangeEventArgs e) => UpdateQty(v.Id, e.Value))" />
+                                                            </div>
+                                                            <div>
+                                                                <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Unit Price</label>
+                                                                <input type="number" step="0.01" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                                                                       value="@line!.UnitPrice"
+                                                                       @onchange="@((ChangeEventArgs e) => UpdatePrice(v.Id, e.Value))" />
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-[11px] text-slate-500 mt-2">
+                                                            QC defaults to <span class="text-slate-200 font-semibold">Approved</span> (stock becomes available immediately).
+                                                        </div>
+                                                        <div class="mt-3 flex justify-end">
+                                                            <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
+                                                                    @onclick="SubmitAsync"
+                                                                    disabled="@_submitting">
+                                                                @(_submitting ? "Submitting..." : "Submit GRN")
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <aside class="xl:col-span-5 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+            <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">history</span>
+                    Recent GRNs
+                </div>
+                <div class="text-[11px] text-slate-500">@_grns.Count</div>
+            </div>
+
+            <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+                @if (!string.IsNullOrEmpty(_listError))
+                {
+                    <div class="p-4 text-red-400 text-xs border-b border-[#344465] bg-[#111621]/60">@_listError</div>
+                }
+                @if (_grns.Count == 0)
+                {
+                    <div class="p-10 text-center text-slate-500 text-sm">No GRNs yet.</div>
+                }
+                else
+                {
+                    <div class="p-4 space-y-3">
+                        @foreach (var g in _grns)
+                        {
+                            var selected = _selectedGrnId == g.Id;
+                            <button type="button"
+                                    class="w-full text-left rounded-xl p-4 border transition-all backdrop-blur-md bg-white/5 hover:bg-white/10 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.75)] @(selected ? "border-[#195de6]/70 ring-1 ring-[#195de6]/30" : "border-white/10 hover:border-white/20")"
+                                    @onclick="@(() => SelectGrnAsync(g.Id))">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-sm font-bold text-[#195de6] truncate">@g.InvoiceNumber</div>
+                                        <div class="text-[11px] text-slate-400 mt-1">@g.VendorName</div>
+                                        <div class="text-[11px] text-slate-500 mt-1">@g.ReceivedDate.ToLocalTime().ToString("dd MMM yyyy") · @g.LineCount lines · @g.TotalQuantity qty</div>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600/15 text-emerald-300 border border-emerald-500/20">Received</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="border-t border-[#344465] p-4 bg-[#111621]/50">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">GRN Detail</div>
+                @if (_selectedGrn == null)
+                {
+                    <div class="text-slate-500 text-sm">Select a GRN to view details.</div>
+                }
+                else
+                {
+                    <div class="text-[11px] text-slate-400 mb-3">
+                        Vendor: <span class="text-slate-200 font-semibold">@_selectedGrn.VendorName</span><br />
+                        Invoice: <span class="text-slate-200 font-semibold">@_selectedGrn.InvoiceNumber</span><br />
+                        Date: <span class="text-slate-200 font-semibold">@_selectedGrn.ReceivedDate.ToLocalTime().ToString("dd MMM yyyy")</span>
+                    </div>
+                    <div class="space-y-2 max-h-[30vh] overflow-auto industrial-scrollbar pr-1">
+                        @foreach (var li in _selectedGrn.Lines)
+                        {
+                            <div class="border border-[#344465] bg-[#243047]/15 p-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-bold text-[#195de6] truncate">@li.Sku</div>
+                                        <div class="text-[11px] text-slate-400 mt-1 truncate">@li.Grade · @li.Size · @li.Unit</div>
+                                        <div class="text-[11px] text-slate-500 mt-1">Batch: <span class="text-slate-200 font-semibold">@li.BatchNumber</span></div>
+                                    </div>
+                                    <div class="text-right text-[11px] text-slate-400">
+                                        <div>Qty <span class="text-slate-200 font-bold">@li.QuantityReceived</span></div>
+                                        <div>Price <span class="text-slate-200 font-bold">@li.UnitPrice</span></div>
+                                    </div>
+                                </div>
+                                <div class="text-[11px] text-slate-500 mt-2">
+                                    QC: <span class="text-slate-200 font-semibold">@li.QualityStatus</span>
+                                    @if (li.StockBatchId.HasValue)
+                                    {
+                                        <span> · BatchId: <span class="text-slate-200 font-semibold">@li.StockBatchId.Value.ToString()[..8]</span></span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </aside>
+    </div>
+}
+
+@if (_showAddVendor)
+{
+    <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @onclick="CloseAddVendor">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-2xl w-full max-w-xl m-4" @onclick:stopPropagation="true">
+            <div class="p-4 border-b border-[#344465] flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-200">Add Vendor</div>
+                    <div class="text-[11px] text-slate-400 mt-1">Vendors are required to receive GRNs.</div>
+                </div>
+                <button class="p-2 text-slate-400 hover:text-white" @onclick="CloseAddVendor" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-3">
+                @if (!string.IsNullOrEmpty(_vendorError))
+                {
+                    <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_vendorError</div>
+                }
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Name</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorName" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">GST (optional)</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorGst" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Contact (optional)</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorContact" />
+                    </div>
+                </div>
+
+                <label class="text-[11px] text-slate-400 flex items-center gap-2">
+                    <input type="checkbox" class="accent-[#195de6]" @bind="_newVendorApproved" />
+                    Approved Vendor
+                </label>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button class="px-3 py-2 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseAddVendor" type="button">Cancel</button>
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="CreateVendorAndSelectAsync" type="button" disabled="@_creatingVendor">
+                        @(_creatingVendor ? "Saving..." : "Save Vendor")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "grnId")]
+    private Guid? QueryGrnId { get; set; }
+
+    private bool _loading = true;
+    private bool _submitting;
+    private string? _formError;
+    private string? _formSuccess;
+    private string? _listError;
+
+    private List<VendorDto> _vendors = [];
+    private Guid? _vendorId;
+    private string _invoiceNumber = "";
+    private DateTime _receivedDate = DateTime.Today;
+
+    private string _search = "";
+    private List<MaterialTypeNodeDto>? _tree;
+    private List<MaterialTypeNodeDto>? _treeFiltered;
+
+    private readonly Dictionary<Guid, GrnLineDraft> _lines = new();
+
+    private GrnDetailDto? _draftGrn;
+    private readonly List<DraftLine> _draftLines = new();
+
+    private List<GrnListItemDto> _grns = [];
+    private Guid? _selectedGrnId;
+    private GrnDetailDto? _selectedGrn;
+
+    // Vendor modal
+    private bool _showAddVendor;
+    private bool _creatingVendor;
+    private string? _vendorError;
+    private string _newVendorName = "";
+    private string _newVendorGst = "";
+    private string _newVendorContact = "";
+    private bool _newVendorApproved = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // If navigated from VendorInvoices -> /grn?grnId=...
+        if (QueryGrnId.HasValue && (_draftGrn == null || _draftGrn.Id != QueryGrnId.Value))
+        {
+            await LoadDraftAsync(QueryGrnId.Value);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _formError = null;
+        _formSuccess = null;
+        _listError = null;
+        StateHasChanged();
+
+        _vendors = (await Api.GetVendorsAsync(Auth.BaseUrl))?.ToList() ?? [];
+        _tree = (await Api.GetInventoryMaterialTreeAsync(Auth.BaseUrl))?.ToList() ?? [];
+        ApplyFilter();
+
+        _grns = (await Api.GetGrnsAsync(Auth.BaseUrl, limit: 30))?.ToList() ?? [];
+        if (_selectedGrnId.HasValue)
+            _selectedGrn = await Api.GetGrnByIdAsync(Auth.BaseUrl, _selectedGrnId.Value);
+
+        if (QueryGrnId.HasValue)
+            await LoadDraftAsync(QueryGrnId.Value);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadDraftAsync(Guid grnId)
+    {
+        _draftGrn = await Api.GetGrnByIdAsync(Auth.BaseUrl, grnId);
+        _draftLines.Clear();
+        _lines.Clear();
+
+        if (_draftGrn != null)
+        {
+            _vendorId = _draftGrn.VendorId;
+            _invoiceNumber = _draftGrn.InvoiceNumber;
+            _receivedDate = _draftGrn.ReceivedDate;
+
+            foreach (var li in _draftGrn.Lines)
+            {
+                _draftLines.Add(new DraftLine
+                {
+                    GrnLineItemId = li.Id,
+                    MaterialVariantId = li.MaterialVariantId,
+                    Sku = li.Sku,
+                    Grade = li.Grade,
+                    Size = li.Size,
+                    Unit = li.Unit,
+                    BatchNumber = li.BatchNumber,
+                    QuantityReceived = li.QuantityReceived,
+                    UnitPrice = li.UnitPrice
+                });
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void ApplyFilter()
+    {
+        if (_tree == null) { _treeFiltered = null; return; }
+        var s = _search.Trim();
+        if (string.IsNullOrWhiteSpace(s)) { _treeFiltered = _tree; return; }
+
+        var filtered = new List<MaterialTypeNodeDto>();
+        foreach (var t in _tree)
+        {
+            var typeMatch = t.Name.Contains(s, StringComparison.OrdinalIgnoreCase) || (t.Description?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false);
+            var grades = new List<MaterialGradeNodeDto>();
+            foreach (var g in t.Grades)
+            {
+                var vars = g.Variants
+                    .Where(v => v.SKU.Contains(s, StringComparison.OrdinalIgnoreCase)
+                                || v.Grade.Contains(s, StringComparison.OrdinalIgnoreCase)
+                                || v.Size.Contains(s, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (typeMatch) vars = g.Variants.ToList();
+                if (vars.Count > 0) grades.Add(new MaterialGradeNodeDto(g.Grade, vars));
+            }
+            if (typeMatch && grades.Count == 0) grades = t.Grades.ToList();
+            if (grades.Count > 0) filtered.Add(new MaterialTypeNodeDto(t.Id, t.Name, t.Description, grades));
+        }
+        _treeFiltered = filtered;
+    }
+
+    private async Task ToggleVariantAsync(Guid variantId, string sku)
+    {
+        if (_lines.ContainsKey(variantId))
+        {
+            _lines.Remove(variantId);
+            return;
+        }
+
+        // Prefill batch number (editable) as: SKU-B0001, SKU-B0002, ... per material variant.
+        var suggested = await Api.GetNextBatchNumberAsync(Auth.BaseUrl, variantId);
+        if (string.IsNullOrWhiteSpace(suggested))
+            suggested = $"{sku}-B0001";
+
+        _lines[variantId] = new GrnLineDraft { BatchNumber = suggested, QuantityReceived = 0, UnitPrice = 0 };
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateBatch(Guid variantId, object? value)
+    {
+        if (!_lines.TryGetValue(variantId, out var line)) return;
+        line.BatchNumber = (value?.ToString() ?? "").Trim();
+    }
+
+    private void UpdateQty(Guid variantId, object? value)
+    {
+        if (!_lines.TryGetValue(variantId, out var line)) return;
+        if (decimal.TryParse(value?.ToString(), out var qty)) line.QuantityReceived = qty;
+    }
+
+    private void UpdatePrice(Guid variantId, object? value)
+    {
+        if (!_lines.TryGetValue(variantId, out var line)) return;
+        if (decimal.TryParse(value?.ToString(), out var p)) line.UnitPrice = p;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _formError = null;
+        _formSuccess = null;
+        _listError = null;
+
+        if (!_vendorId.HasValue) { _formError = "Vendor is required."; return; }
+        if (string.IsNullOrWhiteSpace(_invoiceNumber)) { _formError = "Invoice number is required."; return; }
+        if (_receivedDate == default) { _formError = "Received date is invalid."; return; }
+
+        if (_draftGrn != null)
+        {
+            if (_draftLines.Count == 0) { _formError = "No draft lines found."; return; }
+            if (_draftLines.Any(l => string.IsNullOrWhiteSpace(l.BatchNumber))) { _formError = "Batch number is required for all lines."; return; }
+            if (_draftLines.Any(l => l.QuantityReceived <= 0)) { _formError = "Quantity must be > 0 for all lines."; return; }
+        }
+        else
+        {
+            var lines = _lines
+                .Select(kv => new ReceiveDirectGrnLine(kv.Key, kv.Value.BatchNumber ?? "", kv.Value.QuantityReceived, kv.Value.UnitPrice))
+                .ToList();
+
+            if (lines.Count == 0) { _formError = "Select at least one material line."; return; }
+            if (lines.Any(l => string.IsNullOrWhiteSpace(l.BatchNumber))) { _formError = "Batch number is required for all selected lines."; return; }
+            if (lines.Any(l => l.QuantityReceived <= 0)) { _formError = "Quantity must be > 0 for all selected lines."; return; }
+        }
+
+        _submitting = true;
+        StateHasChanged();
+        try
+        {
+            if (_draftGrn != null)
+            {
+                var req = new SubmitGrnDraftRequest(
+                    InvoiceNumber: _invoiceNumber.Trim(),
+                    ReceivedDate: _receivedDate,
+                    Lines: _draftLines.Select(l => new SubmitGrnDraftLine(l.GrnLineItemId, l.BatchNumber ?? "", l.QuantityReceived, l.UnitPrice)).ToList());
+
+                var (res, err) = await Api.SubmitGrnDraftAsync(Auth.BaseUrl, _draftGrn.Id, req);
+                if (res == null)
+                {
+                    _formError = err ?? "Failed to submit GRN draft.";
+                    return;
+                }
+
+                _formSuccess = $"GRN submitted: GRN-{res.GrnId.ToString()[..8]} · Created {res.CreatedBatchIds.Count} batch(es).";
+                _selectedGrnId = res.GrnId;
+                _selectedGrn = await Api.GetGrnByIdAsync(Auth.BaseUrl, res.GrnId);
+            }
+            else
+            {
+                var lines = _lines
+                    .Select(kv => new ReceiveDirectGrnLine(kv.Key, kv.Value.BatchNumber ?? "", kv.Value.QuantityReceived, kv.Value.UnitPrice))
+                    .ToList();
+
+                var (res, err) = await Api.CreateDirectGrnAsync(Auth.BaseUrl, new CreateDirectGrnRequest(_vendorId.Value, _receivedDate, _invoiceNumber.Trim(), lines));
+                if (res == null)
+                {
+                    _formError = err ?? "Failed to create GRN.";
+                    return;
+                }
+
+                _formSuccess = $"GRN created: GRN-{res.GrnId.ToString()[..8]} · Created {res.CreatedBatchIds.Count} batch(es).";
+                _lines.Clear();
+                _invoiceNumber = "";
+
+                _grns = (await Api.GetGrnsAsync(Auth.BaseUrl, limit: 30))?.ToList() ?? [];
+                _selectedGrnId = res.GrnId;
+                _selectedGrn = await Api.GetGrnByIdAsync(Auth.BaseUrl, res.GrnId);
+            }
+
+            _grns = (await Api.GetGrnsAsync(Auth.BaseUrl, limit: 30))?.ToList() ?? [];
+
+            // refresh materials totals so user sees availability increase
+            _tree = (await Api.GetInventoryMaterialTreeAsync(Auth.BaseUrl))?.ToList() ?? [];
+            ApplyFilter();
+        }
+        finally
+        {
+            _submitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SelectGrnAsync(Guid grnId)
+    {
+        _selectedGrnId = grnId;
+        _selectedGrn = await Api.GetGrnByIdAsync(Auth.BaseUrl, grnId);
+        StateHasChanged();
+    }
+
+    private void OpenAddVendor()
+    {
+        _vendorError = null;
+        _newVendorName = "";
+        _newVendorGst = "";
+        _newVendorContact = "";
+        _newVendorApproved = true;
+        _showAddVendor = true;
+    }
+
+    private void CloseAddVendor()
+    {
+        _showAddVendor = false;
+        _vendorError = null;
+    }
+
+    private async Task CreateVendorAndSelectAsync()
+    {
+        _vendorError = null;
+        if (string.IsNullOrWhiteSpace(_newVendorName))
+        {
+            _vendorError = "Vendor name is required.";
+            return;
+        }
+
+        _creatingVendor = true;
+        StateHasChanged();
+        try
+        {
+            var (v, err) = await Api.CreateVendorAsync(Auth.BaseUrl, new CreateVendorRequest(_newVendorName.Trim(),
+                string.IsNullOrWhiteSpace(_newVendorGst) ? null : _newVendorGst.Trim(),
+                string.IsNullOrWhiteSpace(_newVendorContact) ? null : _newVendorContact.Trim(),
+                _newVendorApproved));
+
+            if (v == null)
+            {
+                _vendorError = err ?? "Failed to create vendor.";
+                return;
+            }
+
+            _vendors = (await Api.GetVendorsAsync(Auth.BaseUrl))?.ToList() ?? [];
+            _vendorId = v.Id;
+            _showAddVendor = false;
+        }
+        finally
+        {
+            _creatingVendor = false;
+            StateHasChanged();
+        }
+    }
+
+    private sealed class GrnLineDraft
+    {
+        public string? BatchNumber { get; set; }
+        public decimal QuantityReceived { get; set; }
+        public decimal UnitPrice { get; set; }
+    }
+
+    private sealed class DraftLine
+    {
+        public Guid GrnLineItemId { get; set; }
+        public Guid MaterialVariantId { get; set; }
+        public string Sku { get; set; } = "";
+        public string Grade { get; set; } = "";
+        public string Size { get; set; } = "";
+        public string Unit { get; set; } = "";
+        public string? BatchNumber { get; set; }
+        public decimal QuantityReceived { get; set; }
+        public decimal UnitPrice { get; set; }
+    }
+
+    private void UpdateDraftBatch(Guid grnLineItemId, object? value)
+    {
+        var x = _draftLines.FirstOrDefault(l => l.GrnLineItemId == grnLineItemId);
+        if (x == null) return;
+        x.BatchNumber = (value?.ToString() ?? "").Trim();
+    }
+
+    private void UpdateDraftQty(Guid grnLineItemId, object? value)
+    {
+        var x = _draftLines.FirstOrDefault(l => l.GrnLineItemId == grnLineItemId);
+        if (x == null) return;
+        if (decimal.TryParse(value?.ToString(), out var qty)) x.QuantityReceived = qty;
+    }
+
+    private void UpdateDraftPrice(Guid grnLineItemId, object? value)
+    {
+        var x = _draftLines.FirstOrDefault(l => l.GrnLineItemId == grnLineItemId);
+        if (x == null) return;
+        if (decimal.TryParse(value?.ToString(), out var p)) x.UnitPrice = p;
+    }
+}
 

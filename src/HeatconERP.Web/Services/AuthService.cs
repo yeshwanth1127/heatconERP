@@ -46,7 +46,7 @@ public class AuthService
     public void Logout()
     {
         _currentUser = null;
-        _baseUrl = "";
+        // Keep base URL (now configured via appsettings); only clear user session.
         _ = ClearSessionAsync();
         OnAuthStateChanged?.Invoke();
     }

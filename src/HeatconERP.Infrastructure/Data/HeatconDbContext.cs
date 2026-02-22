@@ -1,6 +1,7 @@
 using HeatconERP.Application.Abstractions;
 using HeatconERP.Domain.Entities;
 using HeatconERP.Domain.Entities.Inventory;
+using HeatconERP.Domain.Enums;
 using HeatconERP.Domain.Enums.Inventory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -30,7 +31,9 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
     public DbSet<WorkOrderLineItem> WorkOrderLineItems => Set<WorkOrderLineItem>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<PendingApproval> PendingApprovals => Set<PendingApproval>();
-    public DbSet<QualityInspection> QualityInspections => Set<QualityInspection>();
+    public DbSet<WorkOrderQualityGate> WorkOrderQualityGates => Set<WorkOrderQualityGate>();
+    public DbSet<WorkOrderQualityCheck> WorkOrderQualityChecks => Set<WorkOrderQualityCheck>();
+    public DbSet<Ncr> Ncrs => Set<Ncr>();
 
     // Inventory & Procurement (batch traceability)
     public DbSet<MaterialCategory> MaterialCategories => Set<MaterialCategory>();
@@ -38,6 +41,8 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<VendorPurchaseOrder> VendorPurchaseOrders => Set<VendorPurchaseOrder>();
     public DbSet<VendorPurchaseOrderLineItem> VendorPurchaseOrderLineItems => Set<VendorPurchaseOrderLineItem>();
+    public DbSet<VendorPurchaseInvoice> VendorPurchaseInvoices => Set<VendorPurchaseInvoice>();
+    public DbSet<VendorPurchaseInvoiceLineItem> VendorPurchaseInvoiceLineItems => Set<VendorPurchaseInvoiceLineItem>();
     public DbSet<GRN> GRNs => Set<GRN>();
     public DbSet<GRNLineItem> GRNLineItems => Set<GRNLineItem>();
     public DbSet<StockBatch> StockBatches => Set<StockBatch>();
@@ -56,6 +61,62 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<WorkOrder>()
             .Property(w => w.Stage)
             .HasConversion<string>();
+
+        modelBuilder.Entity<WorkOrderQualityGate>()
+            .Property(x => x.Stage)
+            .HasConversion<string>();
+        modelBuilder.Entity<WorkOrderQualityGate>()
+            .Property(x => x.GateStatus)
+            .HasConversion<string>();
+        modelBuilder.Entity<WorkOrderQualityGate>()
+            .HasIndex(x => new { x.WorkOrderId, x.Stage })
+            .IsUnique();
+
+        // Soft delete query filters (QC module)
+        modelBuilder.Entity<WorkOrderQualityGate>().HasQueryFilter(x => !x.IsDeleted);
+        modelBuilder.Entity<WorkOrderQualityCheck>().HasQueryFilter(x => !x.IsDeleted);
+        modelBuilder.Entity<Ncr>().HasQueryFilter(x => !x.IsDeleted);
+
+        modelBuilder.Entity<WorkOrderQualityGate>()
+            .HasOne(x => x.WorkOrder)
+            .WithMany()
+            .HasForeignKey(x => x.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<WorkOrderQualityCheck>()
+            .Property(x => x.Stage)
+            .HasConversion<string>();
+        modelBuilder.Entity<WorkOrderQualityCheck>()
+            .Property(x => x.Result)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<WorkOrderQualityCheck>()
+            .HasOne(x => x.WorkOrder)
+            .WithMany()
+            .HasForeignKey(x => x.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<WorkOrderQualityCheck>()
+            .HasOne(x => x.WorkOrderQualityGate)
+            .WithMany()
+            .HasForeignKey(x => x.WorkOrderQualityGateId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Ncr>()
+            .Property(x => x.Stage)
+            .HasConversion<string>();
+        modelBuilder.Entity<Ncr>()
+            .Property(x => x.Status)
+            .HasConversion<string>();
+        modelBuilder.Entity<Ncr>()
+            .Property(x => x.Disposition)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<Ncr>()
+            .HasOne(x => x.WorkOrder)
+            .WithMany()
+            .HasForeignKey(x => x.WorkOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<WorkOrder>()
             .HasOne(w => w.PurchaseInvoice)
@@ -163,6 +224,8 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<Vendor>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<VendorPurchaseOrder>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<VendorPurchaseOrderLineItem>().HasQueryFilter(x => !x.IsDeleted);
+        modelBuilder.Entity<VendorPurchaseInvoice>().HasQueryFilter(x => !x.IsDeleted);
+        modelBuilder.Entity<VendorPurchaseInvoiceLineItem>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<GRN>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<GRNLineItem>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<StockBatch>().HasQueryFilter(x => !x.IsDeleted);
@@ -178,6 +241,8 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<Vendor>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<VendorPurchaseOrder>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<VendorPurchaseOrderLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
+        modelBuilder.Entity<VendorPurchaseInvoice>().Property(x => x.RowVersion).IsConcurrencyToken();
+        modelBuilder.Entity<VendorPurchaseInvoiceLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<GRN>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<GRNLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<StockBatch>().Property(x => x.RowVersion).IsConcurrencyToken();
@@ -189,6 +254,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
 
         // Enum conversions
         modelBuilder.Entity<VendorPurchaseOrder>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<VendorPurchaseInvoice>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<GRNLineItem>().Property(x => x.QualityStatus).HasConversion<string>();
         modelBuilder.Entity<StockBatch>().Property(x => x.QualityStatus).HasConversion<string>();
         modelBuilder.Entity<StockTransaction>().Property(x => x.TransactionType).HasConversion<string>();
@@ -197,6 +263,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         // Constraints / indexes
         modelBuilder.Entity<MaterialVariant>().HasIndex(x => x.SKU).IsUnique();
         modelBuilder.Entity<StockBatch>().HasIndex(x => new { x.MaterialVariantId, x.BatchNumber }).IsUnique();
+        modelBuilder.Entity<VendorPurchaseInvoice>().HasIndex(x => new { x.VendorId, x.InvoiceNumber }).IsUnique();
 
         // Relationships (Restrict deletes; never cascade in inventory)
         modelBuilder.Entity<MaterialCategory>()
@@ -233,6 +300,36 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
             .HasMany(x => x.Grns)
             .WithOne(x => x.VendorPurchaseOrder)
             .HasForeignKey(x => x.VendorPurchaseOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<VendorPurchaseInvoice>()
+            .HasOne(x => x.VendorPurchaseOrder)
+            .WithMany()
+            .HasForeignKey(x => x.VendorPurchaseOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<VendorPurchaseInvoice>()
+            .HasOne(x => x.Vendor)
+            .WithMany()
+            .HasForeignKey(x => x.VendorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<VendorPurchaseInvoice>()
+            .HasMany(x => x.LineItems)
+            .WithOne(x => x.VendorPurchaseInvoice)
+            .HasForeignKey(x => x.VendorPurchaseInvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<VendorPurchaseInvoiceLineItem>()
+            .HasOne(x => x.MaterialVariant)
+            .WithMany()
+            .HasForeignKey(x => x.MaterialVariantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<GRN>()
+            .HasOne(x => x.VendorPurchaseInvoice)
+            .WithMany()
+            .HasForeignKey(x => x.VendorPurchaseInvoiceId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<GRN>()

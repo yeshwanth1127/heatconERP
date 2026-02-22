@@ -1,0 +1,283 @@
+@page "/vendor-invoices"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Purchase Invoices - HeatconERP</PageTitle>
+
+<div class="bg-[#1a2233] border border-[#344465] px-6 py-3 flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-white leading-none">Purchase Invoices (Vendor)</h1>
+        <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Store</span>
+    </div>
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+    </button>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <section class="lg:col-span-5 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm text-[#195de6]">receipt_long</span>
+                Vendor Invoices
+            </div>
+            <div class="text-[11px] text-slate-500">@_filtered.Count</div>
+        </div>
+        <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <div class="md:col-span-2">
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Search</label>
+                    <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                           placeholder="Vendor / invoice number"
+                           @bind="_search" @bind:after="ApplyFilter" />
+                </div>
+                <div>
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</label>
+                    <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200"
+                            @bind="_statusFilter" @bind:after="ApplyFilter">
+                        <option value="All">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Accepted">Accepted</option>
+                        <option value="Rejected">Rejected</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+            @if (_loading)
+            {
+                <div class="p-8 text-slate-400 text-center">Loading...</div>
+            }
+            else if (!string.IsNullOrEmpty(_listError))
+            {
+                <div class="p-4 text-red-400 text-xs border-b border-[#344465] bg-[#111621]/60">@_listError</div>
+            }
+            else if (_filtered.Count == 0)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">No invoices found.</div>
+            }
+            else
+            {
+                <div class="p-4 space-y-3">
+                    @foreach (var inv in _filtered)
+                    {
+                        var selected = _selectedId == inv.Id;
+                        <button type="button"
+                                class="w-full text-left rounded-xl p-4 border transition-all backdrop-blur-md bg-white/5 hover:bg-white/10 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.75)] @(selected ? "border-[#195de6]/70 ring-1 ring-[#195de6]/30" : "border-white/10 hover:border-white/20")"
+                                @onclick="@(() => SelectAsync(inv.Id))">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-bold text-[#195de6] truncate">@inv.InvoiceNumber</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">@inv.VendorName</div>
+                                    <div class="text-[11px] text-slate-500 mt-1">@inv.InvoiceDate.ToLocalTime().ToString("dd MMM yyyy") · @inv.LineCount lines · @inv.TotalQuantity qty</div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#243047]/60 border border-white/10 text-slate-300">@inv.Status</span>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <aside class="lg:col-span-7 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">assignment</span>
+                    Invoice Details
+                </div>
+                @if (_detail != null)
+                {
+                    <div class="text-[11px] text-slate-400 mt-1">
+                        Invoice: <span class="text-slate-200 font-semibold">@_detail.InvoiceNumber</span> · Vendor: <span class="text-slate-200 font-semibold">@_detail.VendorName</span>
+                    </div>
+                }
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                @if (_detail != null && _detail.Status == "Pending")
+                {
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
+                            @onclick="AcceptAsync"
+                            disabled="@_accepting">
+                        @(_accepting ? "Accepting..." : "Accept → Create GRN")
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-auto industrial-scrollbar p-4">
+            @if (!string.IsNullOrEmpty(_detailError))
+            {
+                <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs mb-4">@_detailError</div>
+            }
+            @if (!string.IsNullOrEmpty(_actionSuccess))
+            {
+                <div class="p-3 border border-emerald-500/20 bg-emerald-900/10 text-emerald-300 text-xs mb-4">@_actionSuccess</div>
+            }
+
+            @if (_detail == null)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">Select a vendor invoice to view details.</div>
+            }
+            else
+            {
+                <div class="text-[11px] text-slate-400 mb-3">
+                    Date: <span class="text-slate-200 font-semibold">@_detail.InvoiceDate.ToLocalTime().ToString("dd MMM yyyy")</span><br />
+                    Status: <span class="text-slate-200 font-semibold">@_detail.Status</span>
+                </div>
+
+                <div class="bg-[#243047]/20 border border-[#344465] p-3">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Line Items</div>
+                    @if (_detail.Lines.Count == 0)
+                    {
+                        <div class="text-xs text-slate-500">No line items.</div>
+                    }
+                    else
+                    {
+                        <table class="w-full border-collapse text-[11px]">
+                            <thead>
+                            <tr class="text-slate-500 border-b border-[#344465]">
+                                <th class="text-left py-2 pr-2">SKU</th>
+                                <th class="text-left py-2 pr-2">Grade</th>
+                                <th class="text-left py-2 pr-2">Size</th>
+                                <th class="text-right py-2 pr-2 w-24">Qty</th>
+                                <th class="text-right py-2 pr-2 w-24">UnitPrice</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var li in _detail.Lines)
+                            {
+                                <tr class="border-b border-[#344465]/30">
+                                    <td class="py-2 pr-2 text-slate-200 font-semibold">@li.Sku</td>
+                                    <td class="py-2 pr-2 text-slate-400">@li.Grade</td>
+                                    <td class="py-2 pr-2 text-slate-400">@li.Size</td>
+                                    <td class="py-2 pr-2 text-right text-slate-200 font-bold">@li.Quantity</td>
+                                    <td class="py-2 pr-2 text-right text-slate-200 font-bold">@li.UnitPrice</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            }
+        </div>
+    </aside>
+</div>
+
+@code {
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "id")]
+    public Guid? InvoiceId { get; set; }
+
+    private bool _loading = true;
+    private string? _listError;
+    private string? _detailError;
+    private string? _actionSuccess;
+    private bool _accepting;
+
+    private string _search = "";
+    private string _statusFilter = "All";
+    private List<VendorInvoiceListItemDto> _all = [];
+    private List<VendorInvoiceListItemDto> _filtered = [];
+
+    private Guid? _selectedId;
+    private VendorInvoiceDetailDto? _detail;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Allows direct navigation to a specific invoice (e.g. after "Send PO → Create Invoice")
+        if (InvoiceId.HasValue && InvoiceId.Value != Guid.Empty && _selectedId != InvoiceId)
+        {
+            _selectedId = InvoiceId.Value;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        _all = (await Api.GetVendorInvoicesAsync(Auth.BaseUrl, status: null, limit: 400))?.ToList() ?? [];
+        ApplyFilter();
+
+        if (InvoiceId.HasValue && InvoiceId.Value != Guid.Empty)
+            _selectedId = InvoiceId.Value;
+
+        if (_selectedId.HasValue)
+            _detail = await Api.GetVendorInvoiceByIdAsync(Auth.BaseUrl, _selectedId.Value);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<VendorInvoiceListItemDto> q = _all;
+
+        if (!string.IsNullOrWhiteSpace(_statusFilter) && _statusFilter != "All")
+            q = q.Where(x => string.Equals(x.Status, _statusFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(x => x.VendorName.Contains(s, StringComparison.OrdinalIgnoreCase)
+                             || x.InvoiceNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _filtered = q
+            .OrderByDescending(x => x.InvoiceDate)
+            .ThenByDescending(x => x.Id)
+            .ToList();
+    }
+
+    private async Task SelectAsync(Guid id)
+    {
+        _selectedId = id;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        _detail = await Api.GetVendorInvoiceByIdAsync(Auth.BaseUrl, id);
+        if (_detail == null) _detailError = "Failed to load vendor invoice details.";
+        StateHasChanged();
+    }
+
+    private async Task AcceptAsync()
+    {
+        if (_detail == null) return;
+        _accepting = true;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        try
+        {
+            var (res, err) = await Api.AcceptVendorInvoiceAsync(Auth.BaseUrl, _detail.Id);
+            if (res == null)
+            {
+                _detailError = err ?? "Failed to accept vendor invoice.";
+                return;
+            }
+
+            _actionSuccess = $"GRN draft created: GRN-{res.GrnId.ToString()[..8]}. Opening GRN...";
+            await LoadAsync();
+            Nav.NavigateTo($"/grn?grnId={res.GrnId}");
+        }
+        finally
+        {
+            _accepting = false;
+            StateHasChanged();
+        }
+    }
+}
+
+

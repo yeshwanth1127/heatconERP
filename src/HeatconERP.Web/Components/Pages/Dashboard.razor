@@ -52,6 +52,131 @@ else
             </div>
         </div>
 
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+            @if (!string.IsNullOrWhiteSpace(_pmQualityDeleteError))
+            {
+                <div class="lg:col-span-12 p-3 border border-rose-500/20 bg-rose-900/10 text-rose-300 text-xs">
+                    @_pmQualityDeleteError
+                </div>
+            }
+            <div class="lg:col-span-4 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[320px]">
+                <div class="p-3 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-[#195de6]">fact_check</span>
+                        Awaiting QC
+                    </div>
+                    <div class="text-[11px] text-slate-500">@_pmAwaitingQc.Count</div>
+                </div>
+                <div class="flex-1 overflow-auto industrial-scrollbar p-3 space-y-2">
+                    @if (_pmAwaitingQc.Count == 0)
+                    {
+                        <div class="text-slate-500 text-sm p-4">No work orders awaiting QC.</div>
+                    }
+                    else
+                    {
+                        @foreach (var wo in _pmAwaitingQc.Take(30))
+                        {
+                            <div class="border border-[#344465] bg-[#243047]/10 p-3 flex items-center justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-[#195de6] truncate">@wo.WorkOrderNumber</div>
+                                    <div class="text-[11px] text-slate-500 mt-1">Stage: <span class="text-slate-200 font-semibold">@wo.CurrentStage</span> · Gate: <span class="text-amber-300 font-semibold">@wo.CurrentGateStatus</span></div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <a class="px-2 py-1 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-[10px] font-bold uppercase rounded"
+                                       href="@($"/quality?woId={wo.WorkOrderId}")">Inspect</a>
+                                    <button class="px-2 py-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-200 text-[10px] font-bold uppercase rounded"
+                                            @onclick="() => DeleteQualityAsync(wo.WorkOrderId)">
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <div class="lg:col-span-4 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[320px]">
+                <div class="p-3 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-rose-400">error</span>
+                        Failed QC / Open NCR
+                    </div>
+                    <div class="text-[11px] text-slate-500">@_pmFailedOpenNcr.Count</div>
+                </div>
+                <div class="flex-1 overflow-auto industrial-scrollbar p-3 space-y-2">
+                    @if (_pmFailedOpenNcr.Count == 0)
+                    {
+                        <div class="text-slate-500 text-sm p-4">No open NCRs.</div>
+                    }
+                    else
+                    {
+                        @foreach (var wo in _pmFailedOpenNcr.Take(30))
+                        {
+                            <div class="border border-rose-500/20 bg-rose-900/10 p-3 flex items-center justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-rose-300 truncate">@wo.WorkOrderNumber</div>
+                                    <div class="text-[11px] text-slate-500 mt-1">Stage: <span class="text-slate-200 font-semibold">@wo.CurrentStage</span> · NCR: <span class="text-rose-300 font-semibold">Open</span></div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <a class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold uppercase rounded"
+                                       href="@($"/quality?woId={wo.WorkOrderId}")">View</a>
+                                    <button class="px-2 py-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-200 text-[10px] font-bold uppercase rounded"
+                                            @onclick="() => DeleteQualityAsync(wo.WorkOrderId)">
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <div class="lg:col-span-4 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[320px]">
+                <div class="p-3 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-amber-400">lock</span>
+                        Blocked Work Orders
+                    </div>
+                    <div class="text-[11px] text-slate-500">@_pmBlocked.Count</div>
+                </div>
+                <div class="flex-1 overflow-auto industrial-scrollbar p-3 space-y-2">
+                    @if (_pmBlocked.Count == 0)
+                    {
+                        <div class="text-slate-500 text-sm p-4">No blocked work orders.</div>
+                    }
+                    else
+                    {
+                        @foreach (var wo in _pmBlocked.Take(30))
+                        {
+                            <div class="border border-amber-500/20 bg-amber-900/10 p-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-bold text-amber-300 truncate">@wo.WorkOrderNumber</div>
+                                        <div class="text-[11px] text-slate-500 mt-1">Current: <span class="text-slate-200 font-semibold">@wo.CurrentStage</span> · Gate: <span class="text-amber-300 font-semibold">@wo.CurrentGateStatus</span></div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <a class="px-2 py-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-white text-[10px] font-bold uppercase rounded"
+                                           href="@($"/quality?woId={wo.WorkOrderId}")">Open</a>
+                                        <button class="px-2 py-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-200 text-[10px] font-bold uppercase rounded"
+                                                @onclick="() => DeleteQualityAsync(wo.WorkOrderId)">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                                @if (wo.Blockers?.Count > 0)
+                                {
+                                    <div class="mt-2 text-[11px] text-slate-500">
+                                        @string.Join(" · ", wo.Blockers.Take(3))
+                                        @if (wo.Blockers.Count > 3) { <span> · +@(wo.Blockers.Count - 3) more</span> }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
         var chartData = _data?.Chart ?? new ChartDto(0, "Items", [new ChartBarDto("Total", 0, 100)]);
         var activities = _data?.Activities ?? [];
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -128,12 +253,12 @@ else
             <div class="bg-[#243047]/25 border border-[#344465] p-4">
                 <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Low Stock Items</div>
                 <div class="text-3xl font-light text-white">@_storeLowStockCount</div>
-                <div class="text-[11px] text-slate-500 mt-1">Placeholder (needs variant-level endpoint)</div>
+                <div class="text-[11px] text-slate-500 mt-1">Out of stock or below minimum level</div>
             </div>
             <div class="bg-[#243047]/25 border border-[#344465] p-4">
                 <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Pending SRS</div>
                 <div class="text-3xl font-light text-white">@_storePendingSrsCount</div>
-                <div class="text-[11px] text-slate-500 mt-1">Placeholder (SRS list endpoint next)</div>
+                <div class="text-[11px] text-slate-500 mt-1">Awaiting store approval + FIFO allocation</div>
             </div>
             <div class="bg-[#243047]/25 border border-[#344465] p-4">
                 <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Incoming Materials</div>
@@ -143,7 +268,7 @@ else
             <div class="bg-[#243047]/25 border border-[#344465] p-4">
                 <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Today’s GRNs</div>
                 <div class="text-3xl font-light text-white">@_storeTodaysGrnCount</div>
-                <div class="text-[11px] text-slate-500 mt-1">Placeholder (GRN list endpoint next)</div>
+                <div class="text-[11px] text-slate-500 mt-1">Receipts posted today</div>
             </div>
             <div class="bg-[#243047]/25 border border-[#344465] p-4">
                 <div class="text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-2">Stock Summary</div>
@@ -341,6 +466,10 @@ else
     private int _pmAcceptedCount;
     private int _pmAllSentCount;
     private int _pmActiveProductionCount;
+    private List<QualityQueueItemDto> _pmAwaitingQc = [];
+    private List<QualityQueueItemDto> _pmFailedOpenNcr = [];
+    private List<QualityQueueItemDto> _pmBlocked = [];
+    private string? _pmQualityDeleteError;
 
     private InventorySummaryDto? _storeInventory;
     private int _storeLowStockCount;
@@ -350,6 +479,19 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+    }
+
+    private async Task DeleteQualityAsync(Guid workOrderId)
+    {
+        _pmQualityDeleteError = null;
+        var (ok, err) = await Api.DeleteWorkOrderQualityAsync(Auth.BaseUrl, workOrderId);
+        if (!ok) _pmQualityDeleteError = err ?? "Failed to delete quality records.";
+
+        var queues = await Api.GetProductionManagerQualityQueuesAsync(Auth.BaseUrl, limit: 800);
+        _pmAwaitingQc = queues?.AwaitingQc?.ToList() ?? [];
+        _pmFailedOpenNcr = queues?.FailedQcOpenNcr?.ToList() ?? [];
+        _pmBlocked = queues?.BlockedWorkOrders?.ToList() ?? [];
+        StateHasChanged();
     }
 
     private async Task LoadAsync()
@@ -376,15 +518,59 @@ else
 
             var prod = await Api.GetProductionWorkOrdersAsync(baseUrl, stage: null);
             _pmActiveProductionCount = prod?.Count ?? 0;
+
+            var queues = await Api.GetProductionManagerQualityQueuesAsync(baseUrl, limit: 800);
+            _pmAwaitingQc = queues?.AwaitingQc?.ToList() ?? [];
+            _pmFailedOpenNcr = queues?.FailedQcOpenNcr?.ToList() ?? [];
+            _pmBlocked = queues?.BlockedWorkOrders?.ToList() ?? [];
         }
         else if (role == "DispatchStoreManager")
         {
+            // Load store KPIs from existing endpoints.
             _storeInventory = await Api.GetInventorySummaryAsync(baseUrl);
 
-            // Placeholders until we add dedicated endpoints:
-            _storeLowStockCount = 0;
-            _storePendingSrsCount = 0;
-            _storeTodaysGrnCount = 0;
+            var pendingSrsTask = Api.GetSrsListAsync(baseUrl, status: "Pending", limit: 500);
+
+            // Count GRNs for "today" using local day boundaries, converted to UTC (DB stores UTC).
+            var localNow = DateTime.Now;
+            var fromUtc = localNow.Date.ToUniversalTime();
+            var toUtc = localNow.Date.AddDays(1).ToUniversalTime();
+            var todaysGrnsTask = Api.GetGrnsAsync(baseUrl, limit: 500, from: fromUtc, to: toUtc);
+
+            // Low stock count: compute from (MaterialVariants + material tree available totals).
+            var variantsTask = Api.GetMaterialVariantsAsync(baseUrl);
+            var treeTask = Api.GetInventoryMaterialTreeAsync(baseUrl);
+
+            await Task.WhenAll(pendingSrsTask, todaysGrnsTask, variantsTask, treeTask);
+
+            var pendingSrs = pendingSrsTask.Result ?? [];
+            _storePendingSrsCount = pendingSrs.Count;
+
+            var todaysGrns = todaysGrnsTask.Result ?? [];
+            _storeTodaysGrnCount = todaysGrns.Count;
+
+            var variants = variantsTask.Result ?? [];
+            var tree = treeTask.Result ?? [];
+
+            var availableByVariant = new Dictionary<Guid, decimal>();
+            foreach (var t in tree)
+            {
+                foreach (var g in t.Grades)
+                {
+                    foreach (var v in g.Variants)
+                    {
+                        availableByVariant[v.Id] = v.Available;
+                    }
+                }
+            }
+
+            _storeLowStockCount = variants.Count(v =>
+            {
+                var avail = availableByVariant.TryGetValue(v.Id, out var a) ? a : 0;
+                if (avail <= 0) return true;
+                if (v.MinimumStockLevel > 0 && avail < v.MinimumStockLevel) return true;
+                return false;
+            });
         }
 
         _loading = false;

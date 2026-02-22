@@ -144,6 +144,179 @@
                             {
                                 <div class="text-[10px] text-emerald-500/90 mt-0.5">Sent to customer (revision linked): <strong>@_selectedDetail.SentRevisionVersion</strong></div>
                             }
+
+                            <div class="mt-2">
+                                <button type="button"
+                                        class="text-[10px] font-bold text-slate-300 hover:text-white bg-[#1a2233] hover:bg-[#243047] border border-[#344465] rounded px-2 py-1 flex items-center gap-1"
+                                        @onclick="ToggleLinkedQuotationAsync">
+                                    <span class="material-symbols-outlined text-sm">@( _showLinkedQuotation ? "expand_less" : "expand_more")</span>
+                                    <span>@( _showLinkedQuotation ? "Hide quotation details" : "View quotation details" )</span>
+                                </button>
+
+                                @if (_showLinkedQuotation)
+                                {
+                                    <div class="mt-2 bg-[#1a2233] border border-[#344465] rounded p-3">
+                                        @if (_linkedQuoteLoading)
+                                        {
+                                            <div class="text-[11px] text-slate-500">Loading quotation…</div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(_linkedQuoteError))
+                                        {
+                                            <div class="text-[11px] text-rose-300">@_linkedQuoteError</div>
+                                        }
+                                        else if (_linkedQuoteRevision != null)
+                                        {
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                                    Linked revision snapshot <span class="text-slate-200 font-semibold">@_linkedQuoteRevision.Version</span>
+                                                </div>
+                                                <div class="text-[10px] text-slate-500">Changed @FormatDate(_linkedQuoteRevision.ChangedAt) by @_linkedQuoteRevision.ChangedBy</div>
+                                            </div>
+
+                                            <div class="grid grid-cols-2 gap-3 text-[11px] mb-2">
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Client</div>
+                                                    <div class="text-slate-200 font-semibold">@(_linkedQuoteRevision.ClientName ?? "—")</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Project</div>
+                                                    <div class="text-slate-200 font-semibold">@(_linkedQuoteRevision.ProjectName ?? "—")</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</div>
+                                                    <div class="text-slate-200 font-semibold">@(_linkedQuoteRevision.Status ?? "—")</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Total</div>
+                                                    <div class="text-slate-200 font-bold">@FormatInr(_linkedQuoteRevision.Amount ?? 0)</div>
+                                                    @if (_linkedQuoteRevision.ManualPrice.HasValue)
+                                                    {
+                                                        <div class="text-[10px] text-slate-500">Manual price override: <span class="text-slate-200 font-semibold">@FormatInr(_linkedQuoteRevision.ManualPrice.Value)</span></div>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            @if (!string.IsNullOrWhiteSpace(_linkedQuoteRevision.PriceBreakdown))
+                                            {
+                                                <div class="mb-2">
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Price breakdown</div>
+                                                    <div class="text-[11px] text-slate-300 whitespace-pre-wrap">@_linkedQuoteRevision.PriceBreakdown</div>
+                                                </div>
+                                            }
+
+                                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Line items</div>
+                                            @if (_linkedQuoteRevision.LineItems.Count == 0)
+                                            {
+                                                <div class="text-[11px] text-slate-500">No line items.</div>
+                                            }
+                                            else
+                                            {
+                                                <table class="w-full border-collapse text-[11px]">
+                                                    <thead>
+                                                    <tr class="text-slate-500 border-b border-[#344465]">
+                                                        <th class="text-left py-1 pr-2">Part</th>
+                                                        <th class="text-right py-1 w-14">Qty</th>
+                                                        <th class="text-right py-1 w-24">Unit</th>
+                                                        <th class="text-right py-1 w-16">Tax%</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    @foreach (var li in _linkedQuoteRevision.LineItems)
+                                                    {
+                                                        <tr class="border-b border-[#344465]/30">
+                                                            <td class="py-1 pr-2">
+                                                                <div class="text-slate-200 font-semibold">@li.PartNumber</div>
+                                                                <div class="text-slate-500">@li.Description</div>
+                                                            </td>
+                                                            <td class="py-1 text-right text-slate-200 font-bold">@li.Quantity</td>
+                                                            <td class="py-1 text-right text-slate-200 font-bold">@FormatInr(li.UnitPrice)</td>
+                                                            <td class="py-1 text-right text-slate-400">@li.TaxPercent</td>
+                                                        </tr>
+                                                    }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                        }
+                                        else if (_linkedQuote != null)
+                                        {
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                                    Quotation <span class="text-slate-200 font-semibold">@_linkedQuote.ReferenceNumber</span> <span class="text-slate-400">@_linkedQuote.Version</span>
+                                                </div>
+                                                <div class="text-[10px] text-slate-500">Created @FormatDate(_linkedQuote.CreatedAt)</div>
+                                            </div>
+
+                                            <div class="grid grid-cols-2 gap-3 text-[11px] mb-2">
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Client</div>
+                                                    <div class="text-slate-200 font-semibold">@(_linkedQuote.ClientName ?? "—")</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Project</div>
+                                                    <div class="text-slate-200 font-semibold">@(_linkedQuote.ProjectName ?? "—")</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Status</div>
+                                                    <div class="text-slate-200 font-semibold">@_linkedQuote.Status</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Total</div>
+                                                    <div class="text-slate-200 font-bold">@FormatInr(_linkedQuote.Amount ?? 0)</div>
+                                                    @if (_linkedQuote.ManualPrice.HasValue)
+                                                    {
+                                                        <div class="text-[10px] text-slate-500">Manual price override: <span class="text-slate-200 font-semibold">@FormatInr(_linkedQuote.ManualPrice.Value)</span></div>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            @if (!string.IsNullOrWhiteSpace(_linkedQuote.PriceBreakdown))
+                                            {
+                                                <div class="mb-2">
+                                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Price breakdown</div>
+                                                    <div class="text-[11px] text-slate-300 whitespace-pre-wrap">@_linkedQuote.PriceBreakdown</div>
+                                                </div>
+                                            }
+
+                                            <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Line items</div>
+                                            @if (_linkedQuote.LineItems.Count == 0)
+                                            {
+                                                <div class="text-[11px] text-slate-500">No line items.</div>
+                                            }
+                                            else
+                                            {
+                                                <table class="w-full border-collapse text-[11px]">
+                                                    <thead>
+                                                    <tr class="text-slate-500 border-b border-[#344465]">
+                                                        <th class="text-left py-1 pr-2">Part</th>
+                                                        <th class="text-right py-1 w-14">Qty</th>
+                                                        <th class="text-right py-1 w-24">Unit</th>
+                                                        <th class="text-right py-1 w-16">Tax%</th>
+                                                    </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    @foreach (var li in _linkedQuote.LineItems)
+                                                    {
+                                                        <tr class="border-b border-[#344465]/30">
+                                                            <td class="py-1 pr-2">
+                                                                <div class="text-slate-200 font-semibold">@li.PartNumber</div>
+                                                                <div class="text-slate-500">@li.Description</div>
+                                                            </td>
+                                                            <td class="py-1 text-right text-slate-200 font-bold">@li.Quantity</td>
+                                                            <td class="py-1 text-right text-slate-200 font-bold">@FormatInr(li.UnitPrice)</td>
+                                                            <td class="py-1 text-right text-slate-400">@li.TaxPercent</td>
+                                                        </tr>
+                                                    }
+                                                    </tbody>
+                                                </table>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="text-[11px] text-slate-500">Quotation not found.</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
 
                         <div class="pt-2">
@@ -156,8 +329,6 @@
                                     <tr class="text-slate-500 border-b border-[#344465]">
                                         <th class="text-left py-1 pr-2">Part / Desc</th>
                                         <th class="text-right py-1 w-14">Qty</th>
-                                        <th class="text-right py-1 w-20">Price</th>
-                                        <th class="text-right py-1 w-12">Tax%</th>
                                         <th class="w-8"></th>
                                     </tr>
                                 </thead>
@@ -170,14 +341,13 @@
                                                 <input class="w-full bg-[#243047] border border-[#344465] rounded px-1.5 py-0.5 text-slate-400 mt-0.5" placeholder="Description" @bind="item.Description" />
                                             </td>
                                             <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" @bind="item.Quantity" /></td>
-                                            <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" step="0.01" @bind="item.UnitPrice" /></td>
-                                            <td class="text-right py-1"><input class="w-full text-right bg-[#243047] border border-[#344465] rounded px-1 py-0.5" type="number" step="0.01" @bind="item.TaxPercent" /></td>
                                             <td class="py-1"><button type="button" class="text-slate-500 hover:text-rose-400" @onclick="@(() => RemoveLineItem(index))"><span class="material-symbols-outlined text-sm">close</span></button></td>
                                         </tr>
                                     }
                                 </tbody>
                             </table>
-                            <div class="mt-2 text-right text-xs font-bold text-slate-300">Total: @FormatInr(_grandTotal)</div>
+                            <div class="mt-2 text-right text-[11px] font-bold text-slate-300">Total qty: @_totalQuantity</div>
+                            <div class="text-[10px] text-slate-500 text-right">Price &amp; tax are set in the invoice, not in the PO.</div>
                         </div>
                     </div>
                     <div class="p-4 border-t border-[#344465] bg-[#243047]/30 space-y-2">
@@ -245,14 +415,12 @@
                         <th class="px-2 py-2 text-center">Match</th>
                         <th class="px-2 py-2 text-right">PO Qty</th>
                         <th class="px-2 py-2 text-right">Quote Qty</th>
-                        <th class="px-2 py-2 text-right">PO Price</th>
-                        <th class="px-2 py-2 text-right">Quote Price</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var c in _compareData.Comparisons)
                     {
-                        var anyMismatch = c.DescriptionMismatch || c.QuantityMismatch || c.PriceMismatch;
+                        var anyMismatch = c.DescriptionMismatch || c.QuantityMismatch;
                         <tr class="border-b border-[#344465]/30 @(anyMismatch ? "bg-amber-500/10" : "")">
                             <td class="px-2 py-1.5 font-medium">@c.PartNumber</td>
                             <td class="px-2 py-1.5 text-slate-400">@c.PoDescription</td>
@@ -260,8 +428,6 @@
                             <td class="px-2 py-1.5 text-center">@(anyMismatch ? "⚠" : "✓")</td>
                             <td class="px-2 py-1.5 text-right">@c.PoQuantity</td>
                             <td class="px-2 py-1.5 text-right">@c.QuotationQuantity</td>
-                            <td class="px-2 py-1.5 text-right">@FormatInr(c.PoUnitPrice)</td>
-                            <td class="px-2 py-1.5 text-right">@FormatInr(c.QuotationUnitPrice)</td>
                         </tr>
                     }
                 </tbody>
@@ -301,8 +467,13 @@
     private QuotationDetailDto? _quotationDetailForCreate;
     private QuotationRevisionDto? _sentRevisionForCreate;
     private PurchaseOrderCompareDto? _compareData;
+    private bool _showLinkedQuotation;
+    private bool _linkedQuoteLoading;
+    private string? _linkedQuoteError;
+    private QuotationDetailDto? _linkedQuote;
+    private QuotationRevisionDetailDto? _linkedQuoteRevision;
 
-    private decimal _grandTotal => _editingLineItems.Sum(x => x.Quantity * x.UnitPrice * (1 + x.TaxPercent / 100m));
+    private int _totalQuantity => _editingLineItems.Sum(x => x.Quantity);
 
     protected override async Task OnInitializedAsync()
     {
@@ -354,6 +525,14 @@
     {
         _selectedDetail = await Api.GetPurchaseOrderByIdAsync(Auth.BaseUrl, id);
         if (_selectedDetail == null) return;
+
+        // Reset linked quotation expansion state when switching POs
+        _showLinkedQuotation = false;
+        _linkedQuoteLoading = false;
+        _linkedQuoteError = null;
+        _linkedQuote = null;
+        _linkedQuoteRevision = null;
+
         _editCustomerPONumber = _selectedDetail.CustomerPONumber ?? "";
         _editPODate = _selectedDetail.PODate;
         _editDeliveryTerms = _selectedDetail.DeliveryTerms ?? "";
@@ -364,13 +543,54 @@
             PartNumber = li.PartNumber,
             Description = li.Description,
             Quantity = li.Quantity,
-            UnitPrice = li.UnitPrice,
-            TaxPercent = li.TaxPercent,
             AttachmentPath = li.AttachmentPath
         }).ToList();
         if (_editingLineItems.Count == 0)
             _editingLineItems.Add(new EditablePOLineItem());
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleLinkedQuotationAsync()
+    {
+        _showLinkedQuotation = !_showLinkedQuotation;
+        if (!_showLinkedQuotation) { StateHasChanged(); return; }
+        await EnsureLinkedQuotationLoadedAsync();
+    }
+
+    private async Task EnsureLinkedQuotationLoadedAsync()
+    {
+        if (_selectedDetail?.QuotationId == null) return;
+
+        var quotationId = _selectedDetail.QuotationId.Value;
+        var revisionId = _selectedDetail.QuotationRevisionId;
+
+        // If already loaded for this PO, skip.
+        if (_linkedQuote != null && _linkedQuote.Id == quotationId
+            && (!revisionId.HasValue || _linkedQuoteRevision?.Id == revisionId.Value))
+            return;
+
+        _linkedQuoteLoading = true;
+        _linkedQuoteError = null;
+        StateHasChanged();
+
+        try
+        {
+            _linkedQuote = await Api.GetQuotationByIdAsync(Auth.BaseUrl, quotationId);
+            _linkedQuoteRevision = null;
+            if (revisionId.HasValue)
+            {
+                _linkedQuoteRevision = await Api.GetRevisionByIdAsync(Auth.BaseUrl, quotationId, revisionId.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _linkedQuoteError = ex.Message;
+        }
+        finally
+        {
+            _linkedQuoteLoading = false;
+            StateHasChanged();
+        }
     }
 
     private async Task CreateNewPO()
@@ -460,7 +680,7 @@
         _saving = true;
         StateHasChanged();
         var lineItems = _editingLineItems.Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description))
-            .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath)).ToList();
+            .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, 0m, 0m, x.AttachmentPath)).ToList();
         var req = new UpdatePurchaseOrderRequest(_selectedDetail.OrderNumber, _editCustomerPONumber, _editPODate, _editDeliveryTerms, _editPaymentTerms, _editStatus, lineItems);
         var ok = await Api.UpdatePurchaseOrderAsync(Auth.BaseUrl, _selectedDetail.Id, req);
         _saving = false;
@@ -506,7 +726,7 @@
             // Ensure the PO line items currently in the editor are persisted
             var poLineItems = _editingLineItems
                 .Where(x => !string.IsNullOrWhiteSpace(x.PartNumber) || !string.IsNullOrWhiteSpace(x.Description))
-                .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, x.UnitPrice, x.TaxPercent, x.AttachmentPath))
+                .Select(x => new PurchaseOrderLineItemInput(x.PartNumber, x.Description, x.Quantity, 0m, 0m, x.AttachmentPath))
                 .ToList();
 
             var saveReq = new UpdatePurchaseOrderRequest(
@@ -567,14 +787,13 @@
     };
 
     private static string FormatInr(decimal value) => "₹ " + value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("en-IN"));
+    private static string FormatDate(DateTime dt) => dt.ToLocalTime().ToString("dd MMM yyyy HH:mm");
 
     private class EditablePOLineItem
     {
         public string PartNumber { get; set; } = "";
         public string Description { get; set; } = "";
         public int Quantity { get; set; }
-        public decimal UnitPrice { get; set; }
-        public decimal TaxPercent { get; set; }
         public string? AttachmentPath { get; set; }
     }
 }

@@ -153,14 +153,6 @@ using (var scope = app.Services.CreateScope())
                 new PendingApproval { Id = Guid.NewGuid(), ReferenceId = "WO-4401-01", Module = "Production", Originator = "Systems Auto", CreatedAt = DateTime.UtcNow.AddHours(-1), Value = null },
                 new PendingApproval { Id = Guid.NewGuid(), ReferenceId = "QT-8890", Module = "Quotations", Originator = "Sara Jenkins", CreatedAt = DateTime.UtcNow, Value = "$882,000.00" });
         } } catch { /* PendingApprovals seed skipped */ }
-    try { if (!await db.QualityInspections.AnyAsync())
-        {
-            var workOrders = await db.WorkOrders.Take(10).ToListAsync();
-            foreach (var wo in workOrders.Take(5))
-                db.QualityInspections.Add(new QualityInspection { Id = Guid.NewGuid(), WorkOrderId = wo.Id, WorkOrderNumber = wo.OrderNumber, Result = "Pass", Notes = "Initial inspection OK", InspectedAt = DateTime.UtcNow.AddDays(-1), InspectedBy = "J.Smith" });
-            foreach (var wo in workOrders.Skip(5).Take(3))
-                db.QualityInspections.Add(new QualityInspection { Id = Guid.NewGuid(), WorkOrderId = wo.Id, WorkOrderNumber = wo.OrderNumber, Result = "Fail", Notes = "Dimensional tolerance exceeded", InspectedAt = DateTime.UtcNow.AddHours(-2), InspectedBy = "M.Jones" });
-        } } catch { /* QualityInspections seed skipped */ }
 
     // Inventory & Procurement: seed material hierarchy (only if empty)
     try

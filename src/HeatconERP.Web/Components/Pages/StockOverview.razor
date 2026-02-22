@@ -1,8 +1,10 @@
 @page "/stock-overview"
 @using HeatconERP.Web.Services
 @using HeatconERP.Web.Models
+@using Microsoft.AspNetCore.Components.Forms
 @inject AuthService Auth
 @inject ApiClient Api
+@inject NavigationManager Nav
 
 <PageTitle>Stock Overview - HeatconERP</PageTitle>
 
@@ -130,6 +132,15 @@ else
 
                                 <div class="mt-3 text-[11px] text-slate-500">
                                     Min level: <span class="text-slate-200 font-semibold">@v.MinimumStockLevel</span>
+                                </div>
+
+                                <div class="mt-3 flex justify-end">
+                                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded flex items-center gap-2"
+                                            type="button"
+                                            @onclick="@(() => OpenRaiseVendorPoAsync(v))">
+                                        <span class="material-symbols-outlined text-sm">add_shopping_cart</span>
+                                        Raise Vendor PO
+                                    </button>
                                 </div>
                             </div>
                         }
@@ -262,6 +273,77 @@ else
     </div>
 }
 
+@if (_showRaiseVendorPo && _raisePoVariant != null)
+{
+    <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @onclick="CloseRaiseVendorPo">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-2xl w-full max-w-xl m-4" @onclick:stopPropagation="true">
+            <div class="p-4 border-b border-[#344465] flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-200">Raise Vendor Purchase Order</div>
+                    <div class="text-[11px] text-slate-400 mt-1">
+                        Material: <span class="text-slate-200 font-semibold">@_raisePoVariant.SKU</span> · @_raisePoVariant.Grade · @_raisePoVariant.Size · @_raisePoVariant.Unit
+                    </div>
+                </div>
+                <button class="p-2 text-slate-400 hover:text-white" @onclick="CloseRaiseVendorPo" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-4">
+                @if (!string.IsNullOrEmpty(_raisePoError))
+                {
+                    <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_raisePoError</div>
+                }
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Vendor</label>
+                        <select class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 text-slate-200" @bind="_raisePoVendorId">
+                            <option value="">-- Select vendor --</option>
+                            @foreach (var v in _vendors.OrderBy(x => x.Name))
+                            {
+                                <option value="@v.Id">@v.Name</option>
+                            }
+                        </select>
+                        @if (_vendors.Count == 0)
+                        {
+                            <div class="text-[11px] text-slate-500 mt-2">No vendors yet. Create one in GRN → Add Vendor.</div>
+                        }
+                    </div>
+
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Order Date</label>
+                        <InputDate @bind-Value="_raisePoOrderDate" class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" />
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Ordered Quantity</label>
+                        <input type="number" step="0.01"
+                               class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                               @bind="_raisePoQuantity" />
+                    </div>
+                    <div class="bg-[#111621] border border-[#344465] p-3">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Unit Price (optional)</label>
+                        <input type="number" step="0.01"
+                               class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200"
+                               @bind="_raisePoUnitPrice" />
+                        <div class="text-[11px] text-slate-500 mt-2">If you don’t know price yet, keep this as 0.</div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <button class="px-3 py-2 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseRaiseVendorPo" type="button">Cancel</button>
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="RaiseVendorPoAsync" disabled="@_raisingPo" type="button">
+                        @(_raisingPo ? "Creating..." : "Create Vendor PO")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private bool _loading = true;
     private InventorySummaryDto? _summary;
@@ -293,6 +375,17 @@ else
     private string _selectedGrade = "";
     private List<string> _availableGrades = [];
 
+    private List<VendorDto> _vendors = [];
+
+    private bool _showRaiseVendorPo;
+    private bool _raisingPo;
+    private string? _raisePoError;
+    private MaterialVariantDto? _raisePoVariant;
+    private Guid? _raisePoVendorId;
+    private DateTime _raisePoOrderDate = DateTime.UtcNow.Date;
+    private decimal _raisePoQuantity = 1;
+    private decimal _raisePoUnitPrice = 0;
+
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
@@ -316,6 +409,82 @@ else
 
         _loading = false;
         StateHasChanged();
+    }
+
+    private async Task OpenRaiseVendorPoAsync(MaterialVariantDto variant)
+    {
+        _raisePoError = null;
+        _raisingPo = false;
+        _raisePoVariant = variant;
+        _raisePoVendorId = null;
+        _raisePoOrderDate = DateTime.UtcNow.Date;
+        _raisePoQuantity = 1;
+        _raisePoUnitPrice = 0;
+        _showRaiseVendorPo = true;
+        StateHasChanged();
+
+        // Lazy-load vendors for the dropdown
+        if (_vendors.Count == 0)
+        {
+            _vendors = (await Api.GetVendorsAsync(Auth.BaseUrl))?.ToList() ?? [];
+            StateHasChanged();
+        }
+    }
+
+    private void CloseRaiseVendorPo()
+    {
+        _showRaiseVendorPo = false;
+        _raisingPo = false;
+        _raisePoError = null;
+        _raisePoVariant = null;
+        _raisePoVendorId = null;
+        StateHasChanged();
+    }
+
+    private async Task RaiseVendorPoAsync()
+    {
+        if (_raisePoVariant == null) return;
+        _raisePoError = null;
+
+        if (!_raisePoVendorId.HasValue)
+        {
+            _raisePoError = "Vendor is required.";
+            return;
+        }
+        if (_raisePoQuantity <= 0)
+        {
+            _raisePoError = "Ordered quantity must be > 0.";
+            return;
+        }
+
+        _raisingPo = true;
+        StateHasChanged();
+
+        try
+        {
+            var req = new CreateVendorPoRequest(
+                VendorId: _raisePoVendorId.Value,
+                OrderDate: _raisePoOrderDate,
+                Lines: new List<CreateVendorPoLine>
+                {
+                    new(_raisePoVariant.Id, _raisePoQuantity, _raisePoUnitPrice)
+                });
+
+            var (po, err) = await Api.CreateVendorPoAsync(Auth.BaseUrl, req);
+            if (po == null)
+            {
+                _raisePoError = err ?? "Failed to create vendor PO.";
+                return;
+            }
+
+            CloseRaiseVendorPo();
+            Nav.NavigateTo($"/vendor-pos?id={po.Id}");
+        }
+        finally
+        {
+            _raisingPo = false;
+            StateHasChanged();
+        }
     }
 
     private void OpenAddMaterial()

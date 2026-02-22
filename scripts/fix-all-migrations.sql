@@ -343,4 +343,13 @@ BEGIN
     END IF;
 END $$;
 
+-- ============================================
+-- Migration: 20260222_Phase1QualityGatesAndNcr (manual)
+-- ============================================
+-- This section is idempotent and can be safely re-run.
+-- It creates WorkOrderQualityGates, WorkOrderQualityChecks (append-only), and Ncrs.
+-- It also migrates/drops legacy QualityInspections.
+
+\i scripts/migrate-quality-gates.sql
+
 SELECT 'All migrations applied successfully!' AS result;

@@ -1,4 +1,7 @@
 using HeatconERP.Application.Services.Srs;
+using HeatconERP.Application.Services.Procurement;
+using HeatconERP.Domain.Enums.Inventory;
+using HeatconERP.Domain.Entities.Inventory;
 using HeatconERP.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,11 +13,13 @@ namespace HeatconERP.API.Controllers;
 public class SRSController : ControllerBase
 {
     private readonly ISrsService _srs;
+    private readonly IProcurementService _procurement;
     private readonly HeatconDbContext _db;
 
-    public SRSController(ISrsService srs, HeatconDbContext db)
+    public SRSController(ISrsService srs, IProcurementService procurement, HeatconDbContext db)
     {
         _srs = srs;
+        _procurement = procurement;
         _db = db;
     }
 
@@ -47,17 +52,31 @@ public class SRSController : ControllerBase
         if (workOrderId.HasValue)
             q = q.Where(x => x.WorkOrderId == workOrderId.Value);
 
-        var items = await q
-            .Include(x => x.WorkOrder)
-            .OrderByDescending(x => x.CreatedAt)
+        var itemsRaw = await (
+                from s in q
+                join wo in _db.WorkOrders.AsNoTracking()
+                    on s.WorkOrderId equals wo.Id into wog
+                from wo in wog.DefaultIfEmpty()
+                orderby s.CreatedAt descending
+                select new
+                {
+                    s.Id,
+                    s.WorkOrderId,
+                    WorkOrderNumber = (string?)wo.OrderNumber,
+                    Status = s.Status.ToString(),
+                    s.CreatedAt
+                })
             .Take(limit)
+            .ToListAsync(ct);
+
+        var items = itemsRaw
             .Select(x => new SrsListDto(
                 x.Id,
                 x.WorkOrderId,
-                x.WorkOrder.OrderNumber,
-                x.Status.ToString(),
+                x.WorkOrderNumber ?? $"WO-{x.WorkOrderId.ToString()[..8]}",
+                x.Status,
                 x.CreatedAt))
-            .ToListAsync(ct);
+            .ToList();
 
         return Ok(items);
     }
@@ -67,7 +86,6 @@ public class SRSController : ControllerBase
     {
         var srs = await _db.SRSs
             .AsNoTracking()
-            .Include(x => x.WorkOrder)
             .Include(x => x.LineItems)
             .ThenInclude(li => li.MaterialVariant)
             .Include(x => x.LineItems)
@@ -77,10 +95,17 @@ public class SRSController : ControllerBase
 
         if (srs == null) return NotFound();
 
+        var workOrderNumber = await _db.WorkOrders
+            .AsNoTracking()
+            .Where(w => w.Id == srs.WorkOrderId)
+            .Select(w => w.OrderNumber)
+            .FirstOrDefaultAsync(ct);
+        workOrderNumber ??= $"WO-{srs.WorkOrderId.ToString()[..8]}";
+
         var dto = new SrsDetailDto(
             srs.Id,
             srs.WorkOrderId,
-            srs.WorkOrder.OrderNumber,
+            workOrderNumber,
             srs.Status.ToString(),
             srs.CreatedAt,
             srs.LineItems
@@ -136,6 +161,91 @@ public class SRSController : ControllerBase
             return Conflict("Concurrency conflict. Refresh and retry.");
         }
     }
+
+    [HttpPost("{srsId:guid}/create-vendor-po")]
+    public async Task<ActionResult<VendorPoCreatedDto>> CreateVendorPoForShortage(Guid srsId, [FromQuery] Guid vendorId, CancellationToken ct)
+    {
+        try
+        {
+            var po = await _procurement.CreateVendorPoFromSrsAsync(srsId, vendorId, ct);
+            return Ok(new VendorPoCreatedDto(po.Id, po.VendorId, po.OrderDate, po.Status.ToString()));
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict("Concurrency conflict. Refresh and retry.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Store action: consume exactly the batches allocated to this SRS (Reserved -> Consumed),
+    /// write StockTransaction(Consume) rows for traceability, and mark SRS status as Consumed.
+    /// </summary>
+    [HttpPost("{srsId:guid}/consume")]
+    public async Task<IActionResult> Consume(Guid srsId, [FromQuery] string? consumedBy, CancellationToken ct)
+    {
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        var srs = await _db.SRSs
+            .Include(x => x.LineItems)
+            .ThenInclude(li => li.BatchAllocations)
+            .FirstOrDefaultAsync(x => x.Id == srsId, ct);
+        if (srs == null) return NotFound("SRS not found.");
+
+        if (srs.Status != SrsStatus.Approved && srs.Status != SrsStatus.Issued)
+            return BadRequest("SRS must be Approved/Issued before consuming.");
+
+        var who = string.IsNullOrWhiteSpace(consumedBy) ? "System" : consumedBy.Trim();
+
+        // Load all batches referenced by allocations.
+        var batchIds = srs.LineItems.SelectMany(li => li.BatchAllocations).Select(a => a.StockBatchId).Distinct().ToList();
+        var batches = await _db.StockBatches.Where(b => batchIds.Contains(b.Id)).ToListAsync(ct);
+        var batchMap = batches.ToDictionary(b => b.Id, b => b);
+
+        var totalConsumed = 0m;
+
+        foreach (var li in srs.LineItems)
+        {
+            foreach (var a in li.BatchAllocations)
+            {
+                var remaining = a.ReservedQuantity - a.ConsumedQuantity;
+                if (remaining <= 0) continue;
+
+                if (!batchMap.TryGetValue(a.StockBatchId, out var batch))
+                    return StatusCode(500, $"Stock batch {a.StockBatchId} not found for allocation {a.Id}.");
+
+                if (batch.QuantityReserved < remaining)
+                    return Conflict($"Batch {batch.BatchNumber} does not have enough reserved qty to consume. Reserved={batch.QuantityReserved}, Need={remaining}.");
+
+                _db.StockTransactions.Add(new StockTransaction
+                {
+                    Id = Guid.NewGuid(),
+                    StockBatchId = batch.Id,
+                    TransactionType = StockTransactionType.Consume,
+                    Quantity = remaining,
+                    LinkedWorkOrderId = srs.WorkOrderId,
+                    LinkedSRSId = srs.Id,
+                    Notes = $"SRS consume (allocation {a.Id}) by {who}"
+                });
+
+                batch.QuantityReserved -= remaining;
+                batch.QuantityConsumed += remaining;
+                a.ConsumedQuantity += remaining;
+                totalConsumed += remaining;
+            }
+        }
+
+        // Mark status
+        srs.Status = SrsStatus.Consumed;
+
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return Ok(new { consumed = true, srsId = srs.Id, status = srs.Status.ToString(), totalConsumed });
+    }
 }
 
 public record SrsDto(Guid Id, Guid WorkOrderId, string Status);
@@ -162,5 +272,7 @@ public record SrsLineItemDetailDto(
     IReadOnlyList<SrsAllocationDto> Allocations);
 
 public record SrsAllocationDto(Guid Id, Guid StockBatchId, string BatchNumber, decimal ReservedQuantity, decimal ConsumedQuantity);
+
+public record VendorPoCreatedDto(Guid Id, Guid VendorId, DateTime OrderDate, string Status);
 
 

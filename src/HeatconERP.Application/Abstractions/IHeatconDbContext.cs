@@ -13,6 +13,8 @@ public interface IHeatconDbContext
     DbSet<Vendor> Vendors { get; }
     DbSet<VendorPurchaseOrder> VendorPurchaseOrders { get; }
     DbSet<VendorPurchaseOrderLineItem> VendorPurchaseOrderLineItems { get; }
+    DbSet<VendorPurchaseInvoice> VendorPurchaseInvoices { get; }
+    DbSet<VendorPurchaseInvoiceLineItem> VendorPurchaseInvoiceLineItems { get; }
     DbSet<GRN> GRNs { get; }
     DbSet<GRNLineItem> GRNLineItems { get; }
     DbSet<StockBatch> StockBatches { get; }

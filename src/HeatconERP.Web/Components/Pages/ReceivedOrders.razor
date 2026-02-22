@@ -222,6 +222,49 @@
                                 </table>
                             }
                         </div>
+
+                        <div class="bg-[#243047]/20 border border-[#344465] p-3">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500">SRS (for this Work Order)</div>
+                                <button class="text-[10px] font-bold text-slate-300 hover:text-white bg-[#1a2233] hover:bg-[#243047] border border-[#344465] rounded px-2 py-1 flex items-center gap-1"
+                                        type="button"
+                                        @onclick="ReloadSrsAsync"
+                                        disabled="@_srsLoading">
+                                    <span class="material-symbols-outlined text-sm">refresh</span>
+                                    <span>@(_srsLoading ? "Loading..." : "Refresh")</span>
+                                </button>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_srsError))
+                            {
+                                <div class="text-[11px] text-rose-300">@_srsError</div>
+                            }
+                            else if (_srsLoading)
+                            {
+                                <div class="text-[11px] text-slate-500">Loading SRS…</div>
+                            }
+                            else if (_srsForSelectedWo.Count == 0)
+                            {
+                                <div class="text-[11px] text-slate-500">No SRS raised yet for this work order.</div>
+                            }
+                            else
+                            {
+                                <div class="space-y-2">
+                                    @foreach (var s in _srsForSelectedWo)
+                                    {
+                                        <div class="flex items-center justify-between gap-3 bg-[#111621]/40 border border-[#344465]/50 rounded p-2">
+                                            <div class="min-w-0">
+                                                <div class="text-[11px] text-slate-200 font-semibold">SRS-@s.Id.ToString()[..8]</div>
+                                                <div class="text-[10px] text-slate-500 mt-0.5">@s.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                            </div>
+                                            <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-white/10 bg-[#243047]/60 text-slate-200">
+                                                @s.Status
+                                            </span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
                     </div>
 
                     <div class="p-4 border-t border-[#344465] bg-[#243047]/30">
@@ -398,6 +441,10 @@
     private List<MaterialTypeNodeDto>? _materialTreeFiltered;
     private readonly Dictionary<Guid, decimal> _selectedQty = new();
 
+    private bool _srsLoading;
+    private string? _srsError;
+    private List<SrsListDto> _srsForSelectedWo = [];
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
@@ -479,7 +526,38 @@
         _selected = _all.FirstOrDefault(x => x.Id == id);
         _acceptSuccess = false;
         _acceptError = null;
+        _ = LoadSrsForSelectedWoAsync();
         StateHasChanged();
+    }
+
+    private async Task ReloadSrsAsync()
+    {
+        await LoadSrsForSelectedWoAsync();
+    }
+
+    private async Task LoadSrsForSelectedWoAsync()
+    {
+        _srsError = null;
+        _srsForSelectedWo = [];
+
+        if (_selected == null) return;
+
+        _srsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var list = await Api.GetSrsListAsync(Auth.BaseUrl, workOrderId: _selected.Id, limit: 50);
+            _srsForSelectedWo = list?.OrderByDescending(x => x.CreatedAt).ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _srsError = ex.Message;
+        }
+        finally
+        {
+            _srsLoading = false;
+            StateHasChanged();
+        }
     }
 
     private async Task AcceptAsync()
@@ -616,6 +694,7 @@
 
             _materialSuccess = $"SRS created: SRS-{srs.Id.ToString()[..8]} (Status: {srs.Status}). Store Manager can approve from SRS tab.";
             _selectedQty.Clear();
+            await LoadSrsForSelectedWoAsync();
         }
         finally
         {

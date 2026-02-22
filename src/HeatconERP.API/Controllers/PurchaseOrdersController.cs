@@ -114,7 +114,6 @@ public class PurchaseOrdersController : ControllerBase
             var pol = i < poLines.Count ? poLines[i] : null;
             var ql = i < quoteLines.Count ? quoteLines[i] : null;
             var qtyDiff = (pol?.Quantity ?? 0) != (ql?.Quantity ?? 0);
-            var priceDiff = (pol?.UnitPrice ?? 0) != (ql?.UnitPrice ?? 0);
             var descDiff = (pol?.Description ?? "") != (ql?.Description ?? "");
             comparisons.Add(new PurchaseOrderCompareLineDto(
                 pol?.PartNumber ?? ql?.PartNumber ?? "",
@@ -124,9 +123,9 @@ public class PurchaseOrdersController : ControllerBase
                 pol?.Quantity ?? 0,
                 ql?.Quantity ?? 0,
                 qtyDiff,
-                pol?.UnitPrice ?? 0,
-                ql?.UnitPrice ?? 0,
-                priceDiff));
+                0,
+                0,
+                false));
         }
 
         return Ok(new PurchaseOrderCompareDto(
@@ -171,7 +170,8 @@ public class PurchaseOrdersController : ControllerBase
             DeliveryTerms = req.DeliveryTerms,
             PaymentTerms = req.PaymentTerms,
             Status = req.Status ?? "Active",
-            Value = 0,
+            // Customer PO: pricing is set later on Purchase Invoice, not on PO.
+            Value = null,
             CreatedAt = DateTime.UtcNow,
             CreatedByUserName = req.CreatedByUserName ?? "System"
         };
@@ -182,8 +182,6 @@ public class PurchaseOrdersController : ControllerBase
             if (sentRevision != null && !string.IsNullOrEmpty(sentRevision.SnapshotLineItemsJson))
             {
                 var sortOrder = 0;
-                decimal subtotal = 0;
-                decimal totalTax = 0;
                 try
                 {
                     var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -199,24 +197,19 @@ public class PurchaseOrdersController : ControllerBase
                                 PartNumber = qli.PartNumber ?? "",
                                 Description = qli.Description ?? "",
                                 Quantity = qli.Quantity,
-                                UnitPrice = qli.UnitPrice,
-                                TaxPercent = qli.TaxPercent,
+                                UnitPrice = 0,
+                                TaxPercent = 0,
                                 AttachmentPath = qli.AttachmentPath
                             };
                             po.LineItems.Add(li);
                             _db.PurchaseOrderLineItems.Add(li);
-                            subtotal += li.Quantity * li.UnitPrice;
-                            totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
                         }
-                    po.Value = subtotal + totalTax;
                 }
                 catch { /* fallback to quotation line items below */ }
             }
             if (po.LineItems.Count == 0 && quotation != null)
             {
                 var sortOrder = 0;
-                decimal subtotal = 0;
-                decimal totalTax = 0;
                 foreach (var qli in quotation.LineItems)
                 {
                     var li = new PurchaseOrderLineItem
@@ -227,22 +220,17 @@ public class PurchaseOrdersController : ControllerBase
                         PartNumber = qli.PartNumber,
                         Description = qli.Description,
                         Quantity = qli.Quantity,
-                        UnitPrice = qli.UnitPrice,
-                        TaxPercent = qli.TaxPercent,
+                        UnitPrice = 0,
+                        TaxPercent = 0,
                         AttachmentPath = qli.AttachmentPath
                     };
                     po.LineItems.Add(li);
                     _db.PurchaseOrderLineItems.Add(li);
-                    subtotal += li.Quantity * li.UnitPrice;
-                    totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
                 }
-                po.Value = subtotal + totalTax;
             }
         }
         else
         {
-            decimal subtotal = 0;
-            decimal totalTax = 0;
             foreach (var x in lineItemsToAdd)
             {
                 var li = new PurchaseOrderLineItem
@@ -253,16 +241,13 @@ public class PurchaseOrdersController : ControllerBase
                     PartNumber = x.Item.PartNumber ?? "",
                     Description = x.Item.Description ?? "",
                     Quantity = x.Item.Quantity,
-                    UnitPrice = x.Item.UnitPrice,
-                    TaxPercent = x.Item.TaxPercent,
+                    UnitPrice = 0,
+                    TaxPercent = 0,
                     AttachmentPath = x.Item.AttachmentPath
                 };
                 po.LineItems.Add(li);
                 _db.PurchaseOrderLineItems.Add(li);
-                subtotal += li.Quantity * li.UnitPrice;
-                totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
             }
-            po.Value = subtotal + totalTax;
         }
 
         _db.PurchaseOrders.Add(po);
@@ -306,8 +291,6 @@ public class PurchaseOrdersController : ControllerBase
         if (req.LineItems != null)
         {
             _db.PurchaseOrderLineItems.RemoveRange(po.LineItems);
-            decimal subtotal = 0;
-            decimal totalTax = 0;
             var sortOrder = 0;
             foreach (var item in req.LineItems)
             {
@@ -319,15 +302,13 @@ public class PurchaseOrdersController : ControllerBase
                     PartNumber = item.PartNumber ?? "",
                     Description = item.Description ?? "",
                     Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice,
-                    TaxPercent = item.TaxPercent,
+                    UnitPrice = 0,
+                    TaxPercent = 0,
                     AttachmentPath = item.AttachmentPath
                 };
                 _db.PurchaseOrderLineItems.Add(li);
-                subtotal += li.Quantity * li.UnitPrice;
-                totalTax += li.Quantity * li.UnitPrice * (li.TaxPercent / 100m);
             }
-            po.Value = subtotal + totalTax;
+            po.Value = null;
         }
 
         _db.ActivityLogs.Add(new ActivityLog

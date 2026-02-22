@@ -4,7 +4,8 @@ public enum SrsStatus
 {
     Pending,
     Approved,
-    Issued
+    Issued,
+    Consumed
 }
 
 

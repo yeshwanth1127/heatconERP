@@ -10,6 +10,8 @@ public class Quotation
     public string? ProjectName { get; set; }
     public string? Description { get; set; }
     public string? Attachments { get; set; } // Comma-separated paths or JSON array of attachment URLs
+    public decimal? ManualPrice { get; set; } // Optional override
+    public string? PriceBreakdown { get; set; } // Optional breakdown/notes
     public string Status { get; set; } = "Draft"; // Draft, In Review, Published, Expired
     public decimal? Amount { get; set; }
     public DateTime CreatedAt { get; set; }

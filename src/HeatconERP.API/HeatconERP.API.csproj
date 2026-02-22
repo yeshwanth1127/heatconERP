@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\HeatconERP.Domain\HeatconERP.Domain.csproj" />
     <ProjectReference Include="..\HeatconERP.Application\HeatconERP.Application.csproj" />
     <ProjectReference Include="..\HeatconERP.Infrastructure\HeatconERP.Infrastructure.csproj" />
   </ItemGroup>

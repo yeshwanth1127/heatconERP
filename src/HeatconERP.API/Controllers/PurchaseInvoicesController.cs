@@ -83,10 +83,11 @@ public class PurchaseInvoicesController : ControllerBase
             decimal computedTotal = 0;
             lineItems = poLines.Select(poli =>
             {
-                var lineTotal = poli.Quantity * poli.UnitPrice * (1 + poli.TaxPercent / 100m);
+                // Customer PO does not contain pricing; display as 0 until invoice line items are saved.
+                var lineTotal = 0m;
                 computedTotal += lineTotal;
                 return new PurchaseInvoiceLineItemDto(
-                    Guid.Empty, sort++, poli.PartNumber, poli.Description, poli.Quantity, poli.UnitPrice, poli.TaxPercent, lineTotal);
+                    Guid.Empty, sort++, poli.PartNumber, poli.Description, poli.Quantity, 0m, 0m, lineTotal);
             }).ToList();
             totalAmount = computedTotal;
         }
@@ -139,7 +140,10 @@ public class PurchaseInvoicesController : ControllerBase
         var sortOrder = 0;
         foreach (var poli in po.LineItems)
         {
-            var lineTotal = poli.Quantity * poli.UnitPrice * (1 + poli.TaxPercent / 100m);
+            // Customer PO does not contain pricing; set price/tax on the invoice.
+            var unitPrice = 0m;
+            var taxPercent = 0m;
+            var lineTotal = 0m;
             var li = new PurchaseInvoiceLineItem
             {
                 Id = Guid.NewGuid(),
@@ -148,8 +152,8 @@ public class PurchaseInvoicesController : ControllerBase
                 PartNumber = poli.PartNumber ?? string.Empty,
                 Description = poli.Description ?? string.Empty,
                 Quantity = poli.Quantity,
-                UnitPrice = poli.UnitPrice,
-                TaxPercent = poli.TaxPercent,
+                UnitPrice = unitPrice,
+                TaxPercent = taxPercent,
                 LineTotal = lineTotal
             };
             inv.LineItems.Add(li);
