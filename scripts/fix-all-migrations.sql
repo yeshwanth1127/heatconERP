@@ -2,6 +2,19 @@
 -- Adds all missing columns/tables from migrations 20260221100000, 20260221110000, and 20260221120000
 -- Run: psql -U postgres -d heatconerp -f scripts/fix-all-migrations.sql
 
+-- Ensure EF migrations history table exists (so later scripts can insert records safely)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory') THEN
+        CREATE TABLE "__EFMigrationsHistory" (
+            "MigrationId" character varying(150) NOT NULL,
+            "ProductVersion" character varying(32) NOT NULL,
+            CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+        );
+        RAISE NOTICE 'Created __EFMigrationsHistory table';
+    END IF;
+END $$;
+
 -- ============================================
 -- Migration: 20260221100000_AddPurchaseOrderQuotationAndLineItems
 -- ============================================
@@ -257,6 +270,34 @@ BEGIN
     END IF;
 END $$;
 
+-- ============================================
+-- Migration: 20260221150000_AddWorkOrderProductionDispatch
+-- ============================================
+-- Add dispatch/receive columns to WorkOrders
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'WorkOrders' AND column_name = 'SentToProductionAt') THEN
+        ALTER TABLE "WorkOrders" ADD COLUMN "SentToProductionAt" timestamp with time zone NULL;
+        RAISE NOTICE 'Added SentToProductionAt column to WorkOrders';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'WorkOrders' AND column_name = 'SentToProductionBy') THEN
+        ALTER TABLE "WorkOrders" ADD COLUMN "SentToProductionBy" text NULL;
+        RAISE NOTICE 'Added SentToProductionBy column to WorkOrders';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'WorkOrders' AND column_name = 'ProductionReceivedAt') THEN
+        ALTER TABLE "WorkOrders" ADD COLUMN "ProductionReceivedAt" timestamp with time zone NULL;
+        RAISE NOTICE 'Added ProductionReceivedAt column to WorkOrders';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'WorkOrders' AND column_name = 'ProductionReceivedBy') THEN
+        ALTER TABLE "WorkOrders" ADD COLUMN "ProductionReceivedBy" text NULL;
+        RAISE NOTICE 'Added ProductionReceivedBy column to WorkOrders';
+    END IF;
+END $$;
+
+-- Record migration in EF history (best-effort; avoids EF thinking it's missing)
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260221150000_AddWorkOrderProductionDispatch', '10.0.0')
+ON CONFLICT ("MigrationId") DO NOTHING;
 -- ============================================
 -- Migration: 20260221140000_AddWorkOrderLineItemsAndAssignment
 -- ============================================
