@@ -21,5 +21,19 @@ public class WorkOrder
     public DateTime? ProductionReceivedAt { get; set; }
     public string? ProductionReceivedBy { get; set; }
 
+    // Production Work Pipeline Timeline
+    public DateTime? WorkStartedAt { get; set; }
+    public string? WorkStartedBy { get; set; }
+    public DateTime? WorkCompletedAt { get; set; }
+    public string? WorkCompletedBy { get; set; }
+
+    // Stage completion timestamps for timeline tracking
+    public DateTime? PlanningCompletedAt { get; set; }
+    public DateTime? MaterialCompletedAt { get; set; }
+    public DateTime? AssemblyCompletedAt { get; set; }
+    public DateTime? TestingCompletedAt { get; set; }
+    public DateTime? QcCompletedAt { get; set; }
+    public DateTime? PackingCompletedAt { get; set; }
+
     public ICollection<WorkOrderLineItem> LineItems { get; set; } = [];
 }

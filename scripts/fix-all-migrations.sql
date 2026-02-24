@@ -385,6 +385,621 @@ BEGIN
 END $$;
 
 -- ============================================
+-- Migration: 20260221170000_AddInventoryProcurementModule
+-- ============================================
+
+-- Create MaterialCategories table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MaterialCategories') THEN
+        CREATE TABLE "MaterialCategories" (
+            "Id" uuid NOT NULL,
+            "Name" text NOT NULL,
+            "Description" text NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_MaterialCategories" PRIMARY KEY ("Id")
+        );
+        RAISE NOTICE 'Created MaterialCategories table';
+    END IF;
+END $$;
+
+-- Create MaterialVariants table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MaterialVariants') THEN
+        CREATE TABLE "MaterialVariants" (
+            "Id" uuid NOT NULL,
+            "MaterialCategoryId" uuid NOT NULL,
+            "Grade" text NOT NULL DEFAULT '',
+            "Size" text NOT NULL DEFAULT '',
+            "Unit" text NOT NULL,
+            "SKU" text NOT NULL,
+            "MinimumStockLevel" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_MaterialVariants" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_MaterialVariants_MaterialCategories_MaterialCategoryId"
+                FOREIGN KEY ("MaterialCategoryId") REFERENCES "MaterialCategories" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created MaterialVariants table';
+    END IF;
+END $$;
+
+-- Create indexes for MaterialVariants
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_MaterialVariants_MaterialCategoryId') THEN
+        CREATE INDEX "IX_MaterialVariants_MaterialCategoryId" ON "MaterialVariants" ("MaterialCategoryId");
+        RAISE NOTICE 'Created index IX_MaterialVariants_MaterialCategoryId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_MaterialVariants_SKU') THEN
+        CREATE UNIQUE INDEX "IX_MaterialVariants_SKU" ON "MaterialVariants" ("SKU");
+        RAISE NOTICE 'Created index IX_MaterialVariants_SKU';
+    END IF;
+END $$;
+
+-- Create Vendors table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Vendors') THEN
+        CREATE TABLE "Vendors" (
+            "Id" uuid NOT NULL,
+            "Name" text NOT NULL,
+            "GSTNumber" text NULL,
+            "ContactDetails" text NULL,
+            "IsApprovedVendor" boolean NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_Vendors" PRIMARY KEY ("Id")
+        );
+        RAISE NOTICE 'Created Vendors table';
+    END IF;
+END $$;
+
+-- Create VendorPurchaseOrders table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'VendorPurchaseOrders') THEN
+        CREATE TABLE "VendorPurchaseOrders" (
+            "Id" uuid NOT NULL,
+            "VendorId" uuid NOT NULL,
+            "OrderDate" timestamp with time zone NOT NULL,
+            "Status" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_VendorPurchaseOrders" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_VendorPurchaseOrders_Vendors_VendorId"
+                FOREIGN KEY ("VendorId") REFERENCES "Vendors" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created VendorPurchaseOrders table';
+    END IF;
+END $$;
+
+-- Create VendorPurchaseOrderLineItems table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'VendorPurchaseOrderLineItems') THEN
+        CREATE TABLE "VendorPurchaseOrderLineItems" (
+            "Id" uuid NOT NULL,
+            "VendorPurchaseOrderId" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "OrderedQuantity" numeric NOT NULL,
+            "UnitPrice" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_VendorPurchaseOrderLineItems" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_VendorPurchaseOrderLineItems_VendorPurchaseOrders_VendorPurchaseOrderId"
+                FOREIGN KEY ("VendorPurchaseOrderId") REFERENCES "VendorPurchaseOrders" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_VendorPurchaseOrderLineItems_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created VendorPurchaseOrderLineItems table';
+    END IF;
+END $$;
+
+-- Create indexes for VendorPurchaseOrders and VendorPurchaseOrderLineItems
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseOrders_VendorId') THEN
+        CREATE INDEX "IX_VendorPurchaseOrders_VendorId" ON "VendorPurchaseOrders" ("VendorId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseOrders_VendorId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseOrderLineItems_VendorPurchaseOrderId') THEN
+        CREATE INDEX "IX_VendorPurchaseOrderLineItems_VendorPurchaseOrderId" ON "VendorPurchaseOrderLineItems" ("VendorPurchaseOrderId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseOrderLineItems_VendorPurchaseOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseOrderLineItems_MaterialVariantId') THEN
+        CREATE INDEX "IX_VendorPurchaseOrderLineItems_MaterialVariantId" ON "VendorPurchaseOrderLineItems" ("MaterialVariantId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseOrderLineItems_MaterialVariantId';
+    END IF;
+END $$;
+
+-- Create GRNs table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'GRNs') THEN
+        CREATE TABLE "GRNs" (
+            "Id" uuid NOT NULL,
+            "VendorPurchaseOrderId" uuid NOT NULL,
+            "ReceivedDate" timestamp with time zone NOT NULL,
+            "InvoiceNumber" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_GRNs" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_GRNs_VendorPurchaseOrders_VendorPurchaseOrderId"
+                FOREIGN KEY ("VendorPurchaseOrderId") REFERENCES "VendorPurchaseOrders" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created GRNs table';
+    END IF;
+END $$;
+
+-- Create GRNLineItems table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'GRNLineItems') THEN
+        CREATE TABLE "GRNLineItems" (
+            "Id" uuid NOT NULL,
+            "GRNId" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "BatchNumber" text NOT NULL,
+            "QuantityReceived" numeric NOT NULL,
+            "UnitPrice" numeric NOT NULL,
+            "QualityStatus" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_GRNLineItems" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_GRNLineItems_GRNs_GRNId"
+                FOREIGN KEY ("GRNId") REFERENCES "GRNs" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_GRNLineItems_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created GRNLineItems table';
+    END IF;
+END $$;
+
+-- Create indexes for GRNs and GRNLineItems
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_GRNs_VendorPurchaseOrderId') THEN
+        CREATE INDEX "IX_GRNs_VendorPurchaseOrderId" ON "GRNs" ("VendorPurchaseOrderId");
+        RAISE NOTICE 'Created index IX_GRNs_VendorPurchaseOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_GRNLineItems_GRNId') THEN
+        CREATE INDEX "IX_GRNLineItems_GRNId" ON "GRNLineItems" ("GRNId");
+        RAISE NOTICE 'Created index IX_GRNLineItems_GRNId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_GRNLineItems_MaterialVariantId') THEN
+        CREATE INDEX "IX_GRNLineItems_MaterialVariantId" ON "GRNLineItems" ("MaterialVariantId");
+        RAISE NOTICE 'Created index IX_GRNLineItems_MaterialVariantId';
+    END IF;
+END $$;
+
+-- Create StockBatches table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'StockBatches') THEN
+        CREATE TABLE "StockBatches" (
+            "Id" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "BatchNumber" text NOT NULL,
+            "GRNLineItemId" uuid NOT NULL,
+            "VendorId" uuid NOT NULL,
+            "QuantityReceived" numeric NOT NULL,
+            "QuantityAvailable" numeric NOT NULL,
+            "QuantityReserved" numeric NOT NULL,
+            "QuantityConsumed" numeric NOT NULL,
+            "UnitPrice" numeric NOT NULL,
+            "QualityStatus" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_StockBatches" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_StockBatches_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_StockBatches_GRNLineItems_GRNLineItemId"
+                FOREIGN KEY ("GRNLineItemId") REFERENCES "GRNLineItems" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_StockBatches_Vendors_VendorId"
+                FOREIGN KEY ("VendorId") REFERENCES "Vendors" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created StockBatches table';
+    END IF;
+END $$;
+
+-- Create indexes for StockBatches
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockBatches_MaterialVariantId_BatchNumber') THEN
+        CREATE UNIQUE INDEX "IX_StockBatches_MaterialVariantId_BatchNumber" ON "StockBatches" ("MaterialVariantId", "BatchNumber");
+        RAISE NOTICE 'Created index IX_StockBatches_MaterialVariantId_BatchNumber';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockBatches_GRNLineItemId') THEN
+        CREATE UNIQUE INDEX "IX_StockBatches_GRNLineItemId" ON "StockBatches" ("GRNLineItemId");
+        RAISE NOTICE 'Created index IX_StockBatches_GRNLineItemId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockBatches_VendorId') THEN
+        CREATE INDEX "IX_StockBatches_VendorId" ON "StockBatches" ("VendorId");
+        RAISE NOTICE 'Created index IX_StockBatches_VendorId';
+    END IF;
+END $$;
+
+-- Create SRSs table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SRSs') THEN
+        CREATE TABLE "SRSs" (
+            "Id" uuid NOT NULL,
+            "WorkOrderId" uuid NOT NULL,
+            "Status" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_SRSs" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_SRSs_WorkOrders_WorkOrderId"
+                FOREIGN KEY ("WorkOrderId") REFERENCES "WorkOrders" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created SRSs table';
+    END IF;
+END $$;
+
+-- Create SRSLineItems table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SRSLineItems') THEN
+        CREATE TABLE "SRSLineItems" (
+            "Id" uuid NOT NULL,
+            "SRSId" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "RequiredQuantity" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_SRSLineItems" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_SRSLineItems_SRSs_SRSId"
+                FOREIGN KEY ("SRSId") REFERENCES "SRSs" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_SRSLineItems_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created SRSLineItems table';
+    END IF;
+END $$;
+
+-- Create SRSBatchAllocations table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SRSBatchAllocations') THEN
+        CREATE TABLE "SRSBatchAllocations" (
+            "Id" uuid NOT NULL,
+            "SRSLineItemId" uuid NOT NULL,
+            "StockBatchId" uuid NOT NULL,
+            "ReservedQuantity" numeric NOT NULL,
+            "ConsumedQuantity" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_SRSBatchAllocations" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_SRSBatchAllocations_SRSLineItems_SRSLineItemId"
+                FOREIGN KEY ("SRSLineItemId") REFERENCES "SRSLineItems" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_SRSBatchAllocations_StockBatches_StockBatchId"
+                FOREIGN KEY ("StockBatchId") REFERENCES "StockBatches" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created SRSBatchAllocations table';
+    END IF;
+END $$;
+
+-- Create indexes for SRSs, SRSLineItems, and SRSBatchAllocations
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_SRSs_WorkOrderId') THEN
+        CREATE INDEX "IX_SRSs_WorkOrderId" ON "SRSs" ("WorkOrderId");
+        RAISE NOTICE 'Created index IX_SRSs_WorkOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_SRSLineItems_SRSId') THEN
+        CREATE INDEX "IX_SRSLineItems_SRSId" ON "SRSLineItems" ("SRSId");
+        RAISE NOTICE 'Created index IX_SRSLineItems_SRSId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_SRSLineItems_MaterialVariantId') THEN
+        CREATE INDEX "IX_SRSLineItems_MaterialVariantId" ON "SRSLineItems" ("MaterialVariantId");
+        RAISE NOTICE 'Created index IX_SRSLineItems_MaterialVariantId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_SRSBatchAllocations_SRSLineItemId') THEN
+        CREATE INDEX "IX_SRSBatchAllocations_SRSLineItemId" ON "SRSBatchAllocations" ("SRSLineItemId");
+        RAISE NOTICE 'Created index IX_SRSBatchAllocations_SRSLineItemId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_SRSBatchAllocations_StockBatchId') THEN
+        CREATE INDEX "IX_SRSBatchAllocations_StockBatchId" ON "SRSBatchAllocations" ("StockBatchId");
+        RAISE NOTICE 'Created index IX_SRSBatchAllocations_StockBatchId';
+    END IF;
+END $$;
+
+-- Create WorkOrderMaterialRequirements table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'WorkOrderMaterialRequirements') THEN
+        CREATE TABLE "WorkOrderMaterialRequirements" (
+            "Id" uuid NOT NULL,
+            "WorkOrderId" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "RequiredQuantity" numeric NOT NULL,
+            "ReservedQuantity" numeric NOT NULL,
+            "ConsumedQuantity" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_WorkOrderMaterialRequirements" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_WorkOrderMaterialRequirements_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_WorkOrderMaterialRequirements_WorkOrders_WorkOrderId"
+                FOREIGN KEY ("WorkOrderId") REFERENCES "WorkOrders" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created WorkOrderMaterialRequirements table';
+    END IF;
+END $$;
+
+-- Create indexes for WorkOrderMaterialRequirements
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_WorkOrderMaterialRequirements_WorkOrderId') THEN
+        CREATE INDEX "IX_WorkOrderMaterialRequirements_WorkOrderId" ON "WorkOrderMaterialRequirements" ("WorkOrderId");
+        RAISE NOTICE 'Created index IX_WorkOrderMaterialRequirements_WorkOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_WorkOrderMaterialRequirements_MaterialVariantId') THEN
+        CREATE INDEX "IX_WorkOrderMaterialRequirements_MaterialVariantId" ON "WorkOrderMaterialRequirements" ("MaterialVariantId");
+        RAISE NOTICE 'Created index IX_WorkOrderMaterialRequirements_MaterialVariantId';
+    END IF;
+END $$;
+
+-- Create StockTransactions table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'StockTransactions') THEN
+        CREATE TABLE "StockTransactions" (
+            "Id" uuid NOT NULL,
+            "StockBatchId" uuid NOT NULL,
+            "TransactionType" text NOT NULL,
+            "Quantity" numeric NOT NULL,
+            "LinkedWorkOrderId" uuid NULL,
+            "LinkedSRSId" uuid NULL,
+            "Notes" text NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_StockTransactions" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_StockTransactions_StockBatches_StockBatchId"
+                FOREIGN KEY ("StockBatchId") REFERENCES "StockBatches" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_StockTransactions_WorkOrders_LinkedWorkOrderId"
+                FOREIGN KEY ("LinkedWorkOrderId") REFERENCES "WorkOrders" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_StockTransactions_SRSs_LinkedSRSId"
+                FOREIGN KEY ("LinkedSRSId") REFERENCES "SRSs" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created StockTransactions table';
+    END IF;
+END $$;
+
+-- Create indexes for StockTransactions
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockTransactions_StockBatchId') THEN
+        CREATE INDEX "IX_StockTransactions_StockBatchId" ON "StockTransactions" ("StockBatchId");
+        RAISE NOTICE 'Created index IX_StockTransactions_StockBatchId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockTransactions_LinkedWorkOrderId') THEN
+        CREATE INDEX "IX_StockTransactions_LinkedWorkOrderId" ON "StockTransactions" ("LinkedWorkOrderId");
+        RAISE NOTICE 'Created index IX_StockTransactions_LinkedWorkOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_StockTransactions_LinkedSRSId') THEN
+        CREATE INDEX "IX_StockTransactions_LinkedSRSId" ON "StockTransactions" ("LinkedSRSId");
+        RAISE NOTICE 'Created index IX_StockTransactions_LinkedSRSId';
+    END IF;
+END $$;
+
+-- Record migration in EF history
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260221170000_AddInventoryProcurementModule') THEN
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        VALUES ('20260221170000_AddInventoryProcurementModule', '10.0.0');
+        RAISE NOTICE 'Added migration record: 20260221170000_AddInventoryProcurementModule';
+    END IF;
+END $$;
+
+-- ============================================
+-- Migration: 20260222120000_AddVendorPurchaseInvoicesAndGrnInvoiceLink
+-- ============================================
+
+-- Add VendorPurchaseInvoiceId column to GRNs
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'GRNs' AND column_name = 'VendorPurchaseInvoiceId') THEN
+        ALTER TABLE "GRNs" ADD COLUMN "VendorPurchaseInvoiceId" uuid NULL;
+        RAISE NOTICE 'Added VendorPurchaseInvoiceId column to GRNs';
+    END IF;
+END $$;
+
+-- Create VendorPurchaseInvoices table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'VendorPurchaseInvoices') THEN
+        CREATE TABLE "VendorPurchaseInvoices" (
+            "Id" uuid NOT NULL,
+            "VendorPurchaseOrderId" uuid NOT NULL,
+            "VendorId" uuid NOT NULL,
+            "InvoiceNumber" text NOT NULL,
+            "InvoiceDate" timestamp with time zone NOT NULL,
+            "Status" text NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_VendorPurchaseInvoices" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_VendorPurchaseInvoices_VendorPurchaseOrders_VendorPurchaseOrderId"
+                FOREIGN KEY ("VendorPurchaseOrderId") REFERENCES "VendorPurchaseOrders" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_VendorPurchaseInvoices_Vendors_VendorId"
+                FOREIGN KEY ("VendorId") REFERENCES "Vendors" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created VendorPurchaseInvoices table';
+    END IF;
+END $$;
+
+-- Create VendorPurchaseInvoiceLineItems table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'VendorPurchaseInvoiceLineItems') THEN
+        CREATE TABLE "VendorPurchaseInvoiceLineItems" (
+            "Id" uuid NOT NULL,
+            "VendorPurchaseInvoiceId" uuid NOT NULL,
+            "MaterialVariantId" uuid NOT NULL,
+            "Quantity" numeric NOT NULL,
+            "UnitPrice" numeric NOT NULL,
+            "CreatedAt" timestamp with time zone NOT NULL,
+            "UpdatedAt" timestamp with time zone NULL,
+            "IsDeleted" boolean NOT NULL DEFAULT false,
+            "RowVersion" bytea NOT NULL DEFAULT '\x',
+            CONSTRAINT "PK_VendorPurchaseInvoiceLineItems" PRIMARY KEY ("Id"),
+            CONSTRAINT "FK_VendorPurchaseInvoiceLineItems_VendorPurchaseInvoices_VendorPurchaseInvoiceId"
+                FOREIGN KEY ("VendorPurchaseInvoiceId") REFERENCES "VendorPurchaseInvoices" ("Id") ON DELETE RESTRICT,
+            CONSTRAINT "FK_VendorPurchaseInvoiceLineItems_MaterialVariants_MaterialVariantId"
+                FOREIGN KEY ("MaterialVariantId") REFERENCES "MaterialVariants" ("Id") ON DELETE RESTRICT
+        );
+        RAISE NOTICE 'Created VendorPurchaseInvoiceLineItems table';
+    END IF;
+END $$;
+
+-- Create indexes for VendorPurchaseInvoices and VendorPurchaseInvoiceLineItems
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_GRNs_VendorPurchaseInvoiceId') THEN
+        CREATE INDEX "IX_GRNs_VendorPurchaseInvoiceId" ON "GRNs" ("VendorPurchaseInvoiceId");
+        RAISE NOTICE 'Created index IX_GRNs_VendorPurchaseInvoiceId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseInvoices_VendorPurchaseOrderId') THEN
+        CREATE INDEX "IX_VendorPurchaseInvoices_VendorPurchaseOrderId" ON "VendorPurchaseInvoices" ("VendorPurchaseOrderId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseInvoices_VendorPurchaseOrderId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseInvoices_VendorId') THEN
+        CREATE INDEX "IX_VendorPurchaseInvoices_VendorId" ON "VendorPurchaseInvoices" ("VendorId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseInvoices_VendorId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseInvoices_VendorId_InvoiceNumber') THEN
+        CREATE UNIQUE INDEX "IX_VendorPurchaseInvoices_VendorId_InvoiceNumber" ON "VendorPurchaseInvoices" ("VendorId", "InvoiceNumber");
+        RAISE NOTICE 'Created index IX_VendorPurchaseInvoices_VendorId_InvoiceNumber';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseInvoiceLineItems_VendorPurchaseInvoiceId') THEN
+        CREATE INDEX "IX_VendorPurchaseInvoiceLineItems_VendorPurchaseInvoiceId" ON "VendorPurchaseInvoiceLineItems" ("VendorPurchaseInvoiceId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseInvoiceLineItems_VendorPurchaseInvoiceId';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_VendorPurchaseInvoiceLineItems_MaterialVariantId') THEN
+        CREATE INDEX "IX_VendorPurchaseInvoiceLineItems_MaterialVariantId" ON "VendorPurchaseInvoiceLineItems" ("MaterialVariantId");
+        RAISE NOTICE 'Created index IX_VendorPurchaseInvoiceLineItems_MaterialVariantId';
+    END IF;
+END $$;
+
+-- Add foreign key for GRNs.VendorPurchaseInvoiceId
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'FK_GRNs_VendorPurchaseInvoices_VendorPurchaseInvoiceId'
+    ) THEN
+        ALTER TABLE "GRNs"
+        ADD CONSTRAINT "FK_GRNs_VendorPurchaseInvoices_VendorPurchaseInvoiceId"
+        FOREIGN KEY ("VendorPurchaseInvoiceId") REFERENCES "VendorPurchaseInvoices" ("Id") ON DELETE RESTRICT;
+        RAISE NOTICE 'Added FK_GRNs_VendorPurchaseInvoices_VendorPurchaseInvoiceId';
+    END IF;
+END $$;
+
+-- Record migration in EF history
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260222120000_AddVendorPurchaseInvoicesAndGrnInvoiceLink') THEN
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        VALUES ('20260222120000_AddVendorPurchaseInvoicesAndGrnInvoiceLink', '10.0.0');
+        RAISE NOTICE 'Added migration record: 20260222120000_AddVendorPurchaseInvoicesAndGrnInvoiceLink';
+    END IF;
+END $$;
+
+-- ============================================
+-- Migration: 20260222123000_AddQuotationPricingFields
+-- ============================================
+
+-- Add pricing fields to Quotations
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Quotations' AND column_name = 'ManualPrice') THEN
+        ALTER TABLE "Quotations" ADD COLUMN "ManualPrice" numeric NULL;
+        RAISE NOTICE 'Added ManualPrice column to Quotations';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Quotations' AND column_name = 'PriceBreakdown') THEN
+        ALTER TABLE "Quotations" ADD COLUMN "PriceBreakdown" text NULL;
+        RAISE NOTICE 'Added PriceBreakdown column to Quotations';
+    END IF;
+END $$;
+
+-- Add pricing fields to QuotationRevisions
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'QuotationRevisions' AND column_name = 'SnapshotManualPrice') THEN
+        ALTER TABLE "QuotationRevisions" ADD COLUMN "SnapshotManualPrice" numeric NULL;
+        RAISE NOTICE 'Added SnapshotManualPrice column to QuotationRevisions';
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'QuotationRevisions' AND column_name = 'SnapshotPriceBreakdown') THEN
+        ALTER TABLE "QuotationRevisions" ADD COLUMN "SnapshotPriceBreakdown" text NULL;
+        RAISE NOTICE 'Added SnapshotPriceBreakdown column to QuotationRevisions';
+    END IF;
+END $$;
+
+-- Record migration in EF history
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260222123000_AddQuotationPricingFields') THEN
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        VALUES ('20260222123000_AddQuotationPricingFields', '10.0.0');
+        RAISE NOTICE 'Added migration record: 20260222123000_AddQuotationPricingFields';
+    END IF;
+END $$;
+
+-- ============================================
 -- Migration: 20260222_Phase1QualityGatesAndNcr (manual)
 -- ============================================
 -- This section is idempotent and can be safely re-run.

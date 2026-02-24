@@ -16,98 +16,281 @@ namespace HeatconERP.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // Add new columns (nullable first for data migration)
-            migrationBuilder.AddColumn<string>(name: "EnquiryNumber", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<DateTime>(name: "DateReceived", table: "Enquiries", type: "timestamp with time zone", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "Source", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "AssignedTo", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "CompanyName", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "ContactPerson", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "Email", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "Phone", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "Gst", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "Address", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "ProductDescription", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<int>(name: "Quantity", table: "Enquiries", type: "integer", nullable: true);
-            migrationBuilder.AddColumn<DateTime>(name: "ExpectedDeliveryDate", table: "Enquiries", type: "timestamp with time zone", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "AttachmentPath", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<bool>(name: "IsAerospace", table: "Enquiries", type: "boolean", nullable: false, defaultValue: false);
-            migrationBuilder.AddColumn<string>(name: "Priority", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "FeasibilityStatus", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "FeasibilityNotes", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<string>(name: "CreatedBy", table: "Enquiries", type: "text", nullable: true);
-            migrationBuilder.AddColumn<DateTime?>(name: "UpdatedAt", table: "Enquiries", type: "timestamp with time zone", nullable: true);
-            migrationBuilder.AddColumn<bool>(name: "IsDeleted", table: "Enquiries", type: "boolean", nullable: false, defaultValue: false);
-
-            // Migrate data from old columns
+            // Use raw SQL to safely handle columns that might already exist
             migrationBuilder.Sql(@"
-                UPDATE ""Enquiries"" SET ""EnquiryNumber"" = COALESCE(""ReferenceNumber"", '') WHERE ""EnquiryNumber"" IS NULL;
-                UPDATE ""Enquiries"" SET ""CompanyName"" = COALESCE(""CustomerName"", '') WHERE ""CompanyName"" IS NULL;
-                UPDATE ""Enquiries"" SET ""ProductDescription"" = COALESCE(""Subject"", '') WHERE ""ProductDescription"" IS NULL;
-                UPDATE ""Enquiries"" SET ""DateReceived"" = ""CreatedAt"" WHERE ""DateReceived"" IS NULL;
-                UPDATE ""Enquiries"" SET ""Source"" = 'Manual' WHERE ""Source"" IS NULL;
-                UPDATE ""Enquiries"" SET ""Status"" = CASE WHEN ""Status"" = 'Open' THEN 'Under Review' WHEN ""Status"" = 'Closed' THEN 'Closed' ELSE COALESCE(""Status"", 'New') END;
-                UPDATE ""Enquiries"" SET ""Priority"" = 'Medium' WHERE ""Priority"" IS NULL;
-                UPDATE ""Enquiries"" SET ""FeasibilityStatus"" = 'Pending' WHERE ""FeasibilityStatus"" IS NULL;
-                UPDATE ""Enquiries"" SET ""EnquiryNumber"" = '' WHERE ""EnquiryNumber"" IS NULL;
-                UPDATE ""Enquiries"" SET ""CompanyName"" = '' WHERE ""CompanyName"" IS NULL;
-                UPDATE ""Enquiries"" SET ""DateReceived"" = ""CreatedAt"" WHERE ""DateReceived"" IS NULL;
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'EnquiryNumber') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""EnquiryNumber"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'DateReceived') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""DateReceived"" timestamp with time zone;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Source') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Source"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AssignedTo') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""AssignedTo"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CompanyName') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""CompanyName"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ContactPerson') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""ContactPerson"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Email') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Email"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Phone') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Phone"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Gst') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Gst"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Address') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Address"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ProductDescription') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""ProductDescription"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Quantity') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Quantity"" integer;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ExpectedDeliveryDate') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""ExpectedDeliveryDate"" timestamp with time zone;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AttachmentPath') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""AttachmentPath"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'IsAerospace') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""IsAerospace"" boolean DEFAULT false;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Priority') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Priority"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'FeasibilityStatus') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""FeasibilityStatus"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'FeasibilityNotes') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""FeasibilityNotes"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CreatedBy') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""CreatedBy"" text;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'UpdatedAt') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""UpdatedAt"" timestamp with time zone;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'IsDeleted') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""IsDeleted"" boolean DEFAULT false;
+                    END IF;
+                END $$;
             ");
 
-            // Make required columns NOT NULL (PostgreSQL)
+            // Migrate data from old columns - handle idempotency
             migrationBuilder.Sql(@"
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""EnquiryNumber"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""EnquiryNumber"" SET DEFAULT '';
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""DateReceived"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""Source"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""Source"" SET DEFAULT 'Manual';
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""CompanyName"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""CompanyName"" SET DEFAULT '';
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""Priority"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""Priority"" SET DEFAULT 'Medium';
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""FeasibilityStatus"" SET NOT NULL;
-                ALTER TABLE ""Enquiries"" ALTER COLUMN ""FeasibilityStatus"" SET DEFAULT 'Pending';
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ReferenceNumber') THEN
+                        UPDATE ""Enquiries"" SET ""EnquiryNumber"" = COALESCE(""ReferenceNumber"", '') WHERE ""EnquiryNumber"" IS NULL;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CustomerName') THEN
+                        UPDATE ""Enquiries"" SET ""CompanyName"" = COALESCE(""CustomerName"", '') WHERE ""CompanyName"" IS NULL;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Subject') THEN
+                        UPDATE ""Enquiries"" SET ""ProductDescription"" = COALESCE(""Subject"", '') WHERE ""ProductDescription"" IS NULL;
+                    END IF;
+                    UPDATE ""Enquiries"" SET ""DateReceived"" = COALESCE(""DateReceived"", ""CreatedAt"") WHERE ""DateReceived"" IS NULL;
+                    UPDATE ""Enquiries"" SET ""Source"" = COALESCE(""Source"", 'Manual') WHERE ""Source"" IS NULL;
+                    UPDATE ""Enquiries"" SET ""Status"" = CASE WHEN ""Status"" = 'Open' THEN 'Under Review' WHEN ""Status"" = 'Closed' THEN 'Closed' ELSE COALESCE(""Status"", 'New') END;
+                    UPDATE ""Enquiries"" SET ""Priority"" = COALESCE(""Priority"", 'Medium') WHERE ""Priority"" IS NULL;
+                    UPDATE ""Enquiries"" SET ""FeasibilityStatus"" = COALESCE(""FeasibilityStatus"", 'Pending') WHERE ""FeasibilityStatus"" IS NULL;
+                    UPDATE ""Enquiries"" SET ""EnquiryNumber"" = '' WHERE ""EnquiryNumber"" IS NULL;
+                    UPDATE ""Enquiries"" SET ""CompanyName"" = '' WHERE ""CompanyName"" IS NULL;
+                END $$;
             ");
 
-            // Drop old columns
-            migrationBuilder.DropColumn(name: "ReferenceNumber", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "CustomerName", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Subject", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "AssignedToUserId", table: "Enquiries");
+            // Make required columns NOT NULL and set defaults (PostgreSQL) - handle idempotency
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""EnquiryNumber"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""EnquiryNumber"" SET DEFAULT '';
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""DateReceived"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""Source"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""Source"" SET DEFAULT 'Manual';
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""CompanyName"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""CompanyName"" SET DEFAULT '';
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""Priority"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""Priority"" SET DEFAULT 'Medium';
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""FeasibilityStatus"" SET NOT NULL;
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE ""Enquiries"" ALTER COLUMN ""FeasibilityStatus"" SET DEFAULT 'Pending';
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
+                END $$;
+            ");
+
+            // Drop old columns if they exist
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ReferenceNumber') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""ReferenceNumber"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CustomerName') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""CustomerName"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Subject') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Subject"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AssignedToUserId') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""AssignedToUserId"";
+                    END IF;
+                END $$;
+            ");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(name: "ReferenceNumber", table: "Enquiries", type: "text", nullable: false, defaultValue: "");
-            migrationBuilder.AddColumn<string>(name: "CustomerName", table: "Enquiries", type: "text", nullable: false, defaultValue: "");
-            migrationBuilder.AddColumn<string>(name: "Subject", table: "Enquiries", type: "text", nullable: false, defaultValue: "");
-            migrationBuilder.AddColumn<Guid?>(name: "AssignedToUserId", table: "Enquiries", type: "uuid", nullable: true);
-
+            // Add back old columns if they don't exist
             migrationBuilder.Sql(@"
-                UPDATE ""Enquiries"" SET ""ReferenceNumber"" = ""EnquiryNumber"", ""CustomerName"" = ""CompanyName"", ""Subject"" = COALESCE(""ProductDescription"", '');
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ReferenceNumber') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""ReferenceNumber"" text DEFAULT '';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CustomerName') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""CustomerName"" text DEFAULT '';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Subject') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""Subject"" text DEFAULT '';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AssignedToUserId') THEN
+                        ALTER TABLE ""Enquiries"" ADD COLUMN ""AssignedToUserId"" uuid;
+                    END IF;
+                END $$;
             ");
 
-            migrationBuilder.DropColumn(name: "EnquiryNumber", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "DateReceived", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Source", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "AssignedTo", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "CompanyName", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "ContactPerson", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Email", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Phone", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Gst", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Address", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "ProductDescription", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Quantity", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "ExpectedDeliveryDate", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "AttachmentPath", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "IsAerospace", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "Priority", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "FeasibilityStatus", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "FeasibilityNotes", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "CreatedBy", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "UpdatedAt", table: "Enquiries");
-            migrationBuilder.DropColumn(name: "IsDeleted", table: "Enquiries");
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'EnquiryNumber') THEN
+                        UPDATE ""Enquiries"" SET ""ReferenceNumber"" = COALESCE(""EnquiryNumber"", ''), ""CustomerName"" = COALESCE(""CompanyName"", ''), ""Subject"" = COALESCE(""ProductDescription"", '');
+                    END IF;
+                END $$;
+            ");
+
+            // Drop new columns if they exist
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'EnquiryNumber') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""EnquiryNumber"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'DateReceived') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""DateReceived"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Source') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Source"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AssignedTo') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""AssignedTo"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CompanyName') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""CompanyName"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ContactPerson') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""ContactPerson"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Email') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Email"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Phone') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Phone"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Gst') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Gst"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Address') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Address"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ProductDescription') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""ProductDescription"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Quantity') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Quantity"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'ExpectedDeliveryDate') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""ExpectedDeliveryDate"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'AttachmentPath') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""AttachmentPath"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'IsAerospace') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""IsAerospace"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'Priority') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""Priority"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'FeasibilityStatus') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""FeasibilityStatus"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'FeasibilityNotes') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""FeasibilityNotes"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'CreatedBy') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""CreatedBy"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'UpdatedAt') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""UpdatedAt"";
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Enquiries' AND column_name = 'IsDeleted') THEN
+                        ALTER TABLE ""Enquiries"" DROP COLUMN ""IsDeleted"";
+                    END IF;
+                END $$;
+            ");
         }
     }
 }

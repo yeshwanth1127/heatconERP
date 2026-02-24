@@ -25,13 +25,33 @@ ALTER TABLE "Enquiries" ADD COLUMN IF NOT EXISTS "UpdatedAt" timestamp with time
 ALTER TABLE "Enquiries" ADD COLUMN IF NOT EXISTS "IsDeleted" boolean DEFAULT false;
 
 -- Migrate existing data (ReferenceNumber->EnquiryNumber, CustomerName->CompanyName, Subject->ProductDescription)
-UPDATE "Enquiries" SET "EnquiryNumber" = COALESCE("ReferenceNumber", '') WHERE "EnquiryNumber" IS NULL OR "EnquiryNumber" = '';
-UPDATE "Enquiries" SET "CompanyName" = COALESCE("CustomerName", '') WHERE "CompanyName" IS NULL OR "CompanyName" = '';
-UPDATE "Enquiries" SET "ProductDescription" = COALESCE("Subject", '') WHERE "ProductDescription" IS NULL;
+-- Only migrate if source columns exist
+DO $$
+BEGIN
+    -- Migrate ReferenceNumber -> EnquiryNumber (if ReferenceNumber exists)
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Enquiries' AND column_name='ReferenceNumber') THEN
+        UPDATE "Enquiries" SET "EnquiryNumber" = COALESCE("ReferenceNumber", '') WHERE "EnquiryNumber" IS NULL OR "EnquiryNumber" = '';
+        RAISE NOTICE 'Migrated ReferenceNumber -> EnquiryNumber';
+    END IF;
+    
+    -- Migrate CustomerName -> CompanyName (if CustomerName exists)
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Enquiries' AND column_name='CustomerName') THEN
+        UPDATE "Enquiries" SET "CompanyName" = COALESCE("CustomerName", '') WHERE "CompanyName" IS NULL OR "CompanyName" = '';
+        RAISE NOTICE 'Migrated CustomerName -> CompanyName';
+    END IF;
+    
+    -- Migrate Subject -> ProductDescription (if Subject exists)
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Enquiries' AND column_name='Subject') THEN
+        UPDATE "Enquiries" SET "ProductDescription" = COALESCE("Subject", '') WHERE "ProductDescription" IS NULL;
+        RAISE NOTICE 'Migrated Subject -> ProductDescription';
+    END IF;
+END $$;
+
+-- Set defaults for other fields
 UPDATE "Enquiries" SET "DateReceived" = "CreatedAt" WHERE "DateReceived" IS NULL;
-UPDATE "Enquiries" SET "Source" = COALESCE("Source", 'Manual');
+UPDATE "Enquiries" SET "Source" = COALESCE("Source", 'Manual') WHERE "Source" IS NULL;
 UPDATE "Enquiries" SET "Status" = CASE WHEN "Status" = 'Open' THEN 'Under Review' WHEN "Status" = 'Closed' THEN 'Closed' ELSE "Status" END;
-UPDATE "Enquiries" SET "Priority" = COALESCE("Priority", 'Medium');
-UPDATE "Enquiries" SET "FeasibilityStatus" = COALESCE("FeasibilityStatus", 'Pending');
-UPDATE "Enquiries" SET "IsAerospace" = COALESCE("IsAerospace", false);
-UPDATE "Enquiries" SET "IsDeleted" = COALESCE("IsDeleted", false);
+UPDATE "Enquiries" SET "Priority" = COALESCE("Priority", 'Medium') WHERE "Priority" IS NULL;
+UPDATE "Enquiries" SET "FeasibilityStatus" = COALESCE("FeasibilityStatus", 'Pending') WHERE "FeasibilityStatus" IS NULL;
+UPDATE "Enquiries" SET "IsAerospace" = COALESCE("IsAerospace", false) WHERE "IsAerospace" IS NULL;
+UPDATE "Enquiries" SET "IsDeleted" = COALESCE("IsDeleted", false) WHERE "IsDeleted" IS NULL;
