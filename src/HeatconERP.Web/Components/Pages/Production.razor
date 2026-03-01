@@ -12,6 +12,13 @@
         Production
     </h2>
     <div class="flex gap-2">
+        <select class="bg-[#243047] border border-[#344465] text-slate-200 text-xs px-3 py-2 uppercase font-medium" @bind="_filterStatus" @bind:after="LoadAsync">
+            <option value="Active">Active</option>
+            <option value="All">All</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+        </select>
         <select class="bg-[#243047] border border-[#344465] text-slate-200 text-xs px-3 py-2 uppercase font-medium" @bind="_filterStage" @bind:after="LoadAsync">
             <option value="">All Stages</option>
             <option value="Planning">Planning</option>
@@ -80,6 +87,7 @@ else
 @code {
     private List<WorkOrderDto> _workOrders = [];
     private string _filterStage = "";
+    private string _filterStatus = "Active";
     private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
@@ -92,7 +100,10 @@ else
         _loading = true;
         StateHasChanged();
         var baseUrl = Auth.BaseUrl;
-        var items = await Api.GetProductionWorkOrdersAsync(baseUrl, string.IsNullOrEmpty(_filterStage) ? null : _filterStage);
+        var items = await Api.GetProductionWorkOrdersAsync(
+            baseUrl,
+            stage: string.IsNullOrEmpty(_filterStage) ? null : _filterStage,
+            status: string.IsNullOrEmpty(_filterStatus) ? null : _filterStatus);
         _workOrders = items?.ToList() ?? [];
         _loading = false;
         StateHasChanged();
@@ -101,7 +112,7 @@ else
     private async Task UpdateStage(Guid id, string? stage)
     {
         if (string.IsNullOrEmpty(stage)) return;
-        var ok = await Api.UpdateWorkOrderStageAsync(Auth.BaseUrl, id, stage);
-        if (ok) await LoadAsync();
+        var (success, _, __) = await Api.UpdateWorkOrderStageAsync(Auth.BaseUrl, id, stage);
+        if (success) await LoadAsync();
     }
 }

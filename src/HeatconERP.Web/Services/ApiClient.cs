@@ -62,11 +62,15 @@ public class ApiClient
         }
     }
 
-    public async Task<IReadOnlyList<WorkOrderDto>?> GetProductionWorkOrdersAsync(string baseUrl, string? stage = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<WorkOrderDto>?> GetProductionWorkOrdersAsync(string baseUrl, string? stage = null, string? status = null, CancellationToken ct = default)
     {
         try
         {
-            var path = string.IsNullOrEmpty(stage) ? "/api/production/workorders" : $"/api/production/workorders?stage={Uri.EscapeDataString(stage)}";
+            var queryParams = new List<string>();
+            if (!string.IsNullOrEmpty(stage)) queryParams.Add($"stage={Uri.EscapeDataString(stage)}");
+            if (!string.IsNullOrEmpty(status)) queryParams.Add($"status={Uri.EscapeDataString(status)}");
+            var queryString = queryParams.Count > 0 ? "?" + string.Join("&", queryParams) : "";
+            var path = $"/api/production/workorders{queryString}";
             var response = await _http.GetAsync(Url(baseUrl, path), ct);
             if (!response.IsSuccessStatusCode) return null;
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -75,13 +79,128 @@ public class ApiClient
         catch { return null; }
     }
 
-    public async Task<bool> UpdateWorkOrderStageAsync(string baseUrl, Guid id, string stage, CancellationToken ct = default)
+    public async Task<(bool Success, string? ErrorMessage, List<string>? Blockers)> UpdateWorkOrderStageAsync(string baseUrl, Guid id, string stage, CancellationToken ct = default)
     {
         try
         {
             var body = JsonSerializer.Serialize(new { stage });
             var content = new StringContent(body, Encoding.UTF8, "application/json");
+            Console.WriteLine($"[ApiClient] PATCH /api/production/{id}/stage with stage={stage}");
             var response = await _http.PatchAsync(Url(baseUrl, $"/api/production/{id}/stage"), content, ct);
+            Console.WriteLine($"[ApiClient] Response status: {response.StatusCode}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                return (true, null, null);
+            }
+            else
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                Console.WriteLine($"[ApiClient] Error response body: {errorBody}");
+                
+                try
+                {
+                    var errorJson = JsonSerializer.Deserialize<JsonElement>(errorBody);
+                    string? errorMsg = null;
+                    List<string>? blockers = null;
+                    
+                    if (errorJson.TryGetProperty("error", out var errorProp))
+                    {
+                        errorMsg = errorProp.GetString();
+                    }
+                    
+                    if (errorJson.TryGetProperty("blockers", out var blockersProp) && blockersProp.ValueKind == JsonValueKind.Array)
+                    {
+                        blockers = new List<string>();
+                        foreach (var blocker in blockersProp.EnumerateArray())
+                        {
+                            if (blocker.ValueKind == JsonValueKind.String)
+                            {
+                                blockers.Add(blocker.GetString() ?? "Unknown blocker");
+                            }
+                        }
+                    }
+                    
+                    return (false, errorMsg, blockers);
+                }
+                catch { }
+                
+                return (false, $"Request failed with status {response.StatusCode}", null);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ApiClient] Error updating stage: {ex.Message}");
+            return (false, ex.Message, null);
+        }
+    }
+
+    public async Task<WorkOrderPipelineDto?> GetWorkOrderPipelineAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/production/{id}/pipeline"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<WorkOrderPipelineDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(bool Ok, string? Error)> CompleteWorkOrderAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/production/{id}/complete"), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<WorkOrderPipelineDto>?> GetAllWorkOrderPipelinesAsync(string baseUrl, string? filter = null, string? status = null, CancellationToken ct = default)
+    {
+        try
+        {
+            var cacheBuster = $"&_t={DateTime.UtcNow.Ticks}";
+            var queryParams = new List<string>();
+            
+            if (filter != null)
+                queryParams.Add($"filter={Uri.EscapeDataString(filter)}");
+            if (status != null)
+                queryParams.Add($"status={Uri.EscapeDataString(status)}");
+            
+            var queryString = queryParams.Count > 0 ? "?" + string.Join("&", queryParams) + cacheBuster : $"?_t={DateTime.UtcNow.Ticks}";
+            var path = $"/api/production/pipeline/all{queryString}";
+            
+            Console.WriteLine($"[ApiClient] GET {path}");
+            var response = await _http.GetAsync(Url(baseUrl, path), ct);
+            Console.WriteLine($"[ApiClient] Response status: {response.StatusCode}");
+            
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<List<WorkOrderPipelineDto>>(opts, ct) ?? [];
+            Console.WriteLine($"[ApiClient] Retrieved {result.Count} pipelines");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ApiClient] Error fetching pipelines: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<bool> StartWorkOrderAsync(string baseUrl, Guid id, string username, CancellationToken ct = default)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new { username });
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/production/{id}/start-work"), content, ct);
             return response.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -548,6 +667,21 @@ public class ApiClient
         catch { return false; }
     }
 
+    public async Task<(bool Ok, string? Error)> DeleteWorkOrderAsync(string baseUrl, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.DeleteAsync(Url(baseUrl, $"/api/workorders/{id}"), ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     public async Task<(bool Ok, string? Error)> SendWorkOrderToProductionAsync(string baseUrl, Guid id, string? sentBy, CancellationToken ct = default)
     {
         try
@@ -586,6 +720,25 @@ public class ApiClient
         }
     }
 
+    public async Task<(bool Ok, string? Error)> SendToProductionAsync(string baseUrl, Guid id, string? sentBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var path = string.IsNullOrWhiteSpace(sentBy)
+                ? $"/api/workorders/{id}/send-to-production"
+                : $"/api/workorders/{id}/send-to-production?sentBy={Uri.EscapeDataString(sentBy)}";
+
+            var response = await _http.PostAsync(Url(baseUrl, path), null, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     public async Task<InventorySummaryDto?> GetInventorySummaryAsync(string baseUrl, CancellationToken ct = default)
     {
         try
@@ -606,6 +759,18 @@ public class ApiClient
             if (!response.IsSuccessStatusCode) return null;
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             return await response.Content.ReadFromJsonAsync<List<BatchHistoryDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<BatchTreeNodeDto>?> GetBatchTreeAsync(string baseUrl, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, "/api/inventory/batch-tree"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<BatchTreeNodeDto>>(opts, ct) ?? [];
         }
         catch { return null; }
     }
@@ -792,20 +957,69 @@ public class ApiClient
         }
     }
 
-    public async Task<(VendorInvoiceAcceptedDto? Result, string? Error)> AcceptVendorInvoiceAsync(string baseUrl, Guid vendorInvoiceId, CancellationToken ct = default)
+    public async Task<(VendorInvoiceAcceptedDto? Result, string? Error)> AcceptVendorInvoiceAsync(string baseUrl, Guid vendorInvoiceId, VendorInvoiceQcDecisionRequest req, CancellationToken ct = default)
     {
         try
         {
-            var response = await _http.PostAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/accept"), null, ct);
+            var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var content = new StringContent(JsonSerializer.Serialize(req, opts), Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/accept"), content, ct);
             if (!response.IsSuccessStatusCode)
                 return (null, await ReadErrorAsync(response, ct));
-            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var dto = await response.Content.ReadFromJsonAsync<VendorInvoiceAcceptedDto>(opts, ct);
+            var readOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var dto = await response.Content.ReadFromJsonAsync<VendorInvoiceAcceptedDto>(readOpts, ct);
             return dto == null ? (null, "Failed to read accept response.") : (dto, null);
         }
         catch (Exception ex)
         {
             return (null, ex.Message);
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> DeclineVendorInvoiceAsync(string baseUrl, Guid vendorInvoiceId, VendorInvoiceQcDecisionRequest req, CancellationToken ct = default)
+    {
+        try
+        {
+            var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var content = new StringContent(JsonSerializer.Serialize(req, opts), Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/decline"), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<VendorInvoiceQcHistoryDto>?> GetVendorInvoiceQcDeclineHistoryAsync(string baseUrl, Guid vendorInvoiceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/qc-decline-history"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<VendorInvoiceQcHistoryDto>>(opts, ct) ?? [];
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<GrnQcStatusDto?> GetGrnQcStatusAsync(string baseUrl, Guid vendorInvoiceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/vendor-invoices/{vendorInvoiceId}/grn-qc-status"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<GrnQcStatusDto>(opts, ct);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -897,7 +1111,7 @@ public class ApiClient
         }
     }
 
-    public async Task<IReadOnlyList<GrnListItemDto>?> GetGrnsAsync(string baseUrl, int limit = 50, Guid? vendorId = null, DateTime? from = null, DateTime? to = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<GrnListItemDto>?> GetGrnsAsync(string baseUrl, int limit = 50, Guid? vendorId = null, DateTime? from = null, DateTime? to = null, bool qcPassedOnly = false, CancellationToken ct = default)
     {
         try
         {
@@ -905,6 +1119,7 @@ public class ApiClient
             if (vendorId.HasValue) q.Add($"vendorId={vendorId.Value}");
             if (from.HasValue) q.Add($"from={from.Value:O}");
             if (to.HasValue) q.Add($"to={to.Value:O}");
+            if (qcPassedOnly) q.Add("qcPassedOnly=true");
             var path = "/api/procurement/grns?" + string.Join("&", q);
 
             var response = await _http.GetAsync(Url(baseUrl, path), ct);
@@ -925,6 +1140,71 @@ public class ApiClient
             return await response.Content.ReadFromJsonAsync<GrnDetailDto>(opts, ct);
         }
         catch { return null; }
+    }
+
+    public async Task<IReadOnlyList<GrnQcListDto>?> GetPendingQcGrnsAsync(string baseUrl, int limit = 100, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/grns/pending-qc?limit={limit}"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<List<GrnQcListDto>>(opts, ct) ?? [];
+        }
+        catch { return null; }
+    }
+
+    public async Task<GrnQcDetailDto?> GetGrnQcDetailAsync(string baseUrl, Guid grnId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync(Url(baseUrl, $"/api/procurement/grns/{grnId}/qc-detail"), ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return await response.Content.ReadFromJsonAsync<GrnQcDetailDto>(opts, ct);
+        }
+        catch { return null; }
+    }
+
+    public async Task<(bool Ok, Guid? BatchId, string? Error)> ApproveGrnLineAsync(string baseUrl, Guid lineId, string? notes, string? approvedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var req = new ApproveGrnLineRequest(notes, approvedBy);
+            var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var content = new StringContent(JsonSerializer.Serialize(req, opts), Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/procurement/grns/lines/{lineId}/approve"), content, ct);
+
+            if (!response.IsSuccessStatusCode)
+                return (false, null, await ReadErrorAsync(response, ct));
+
+            var result = await response.Content.ReadFromJsonAsync<ApproveGrnLineResult>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+            return (true, result?.BatchId, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, null, ex.Message);
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> RejectGrnLineAsync(string baseUrl, Guid lineId, string reason, string? ncrDescription, string? rejectedBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var req = new RejectGrnLineRequest(reason, ncrDescription, rejectedBy);
+            var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var content = new StringContent(JsonSerializer.Serialize(req, opts), Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync(Url(baseUrl, $"/api/procurement/grns/lines/{lineId}/reject"), content, ct);
+
+            if (!response.IsSuccessStatusCode)
+                return (false, await ReadErrorAsync(response, ct));
+
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
     }
 
     public async Task<IReadOnlyList<VendorPoListItemDto>?> GetVendorPosAsync(string baseUrl, int limit = 100, CancellationToken ct = default)

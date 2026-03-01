@@ -243,9 +243,14 @@ else
                     <div class="text-xs text-slate-400 uppercase tracking-widest font-bold">Store Manager</div>
                     <div class="text-xl font-bold text-white leading-none mt-1">Operations Overview</div>
                 </div>
-                <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-2 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="RefreshAsync">
-                    <span class="material-symbols-outlined text-sm">refresh</span> Refresh
-                </button>
+                <div class="flex items-center gap-2">
+                    <button class="bg-[#195de6] hover:bg-[#195de6]/90 text-white py-2 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="OpenAddVendor" type="button">
+                        <span class="material-symbols-outlined text-sm">add</span> Add Vendor
+                    </button>
+                    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-2 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="RefreshAsync">
+                        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -458,6 +463,61 @@ else
     }
 }
 
+@if (_showAddVendor)
+{
+    <div class="fixed inset-0 bg-black/70 flex items-center justify-center z-50" @onclick="CloseAddVendor">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg shadow-2xl w-full max-w-xl m-4" @onclick:stopPropagation="true">
+            <div class="p-4 border-b border-[#344465] flex items-center justify-between">
+                <div>
+                    <div class="text-xs font-bold uppercase tracking-wider text-slate-200">Add Vendor</div>
+                    <div class="text-[11px] text-slate-400 mt-1">Add a new vendor to the system</div>
+                </div>
+                <button class="p-2 text-slate-400 hover:text-white" @onclick="CloseAddVendor" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-3">
+                @if (!string.IsNullOrEmpty(_vendorError))
+                {
+                    <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs">@_vendorError</div>
+                }
+                @if (!string.IsNullOrEmpty(_vendorSuccess))
+                {
+                    <div class="p-3 border border-emerald-500/20 bg-emerald-900/10 text-emerald-300 text-xs">@_vendorSuccess</div>
+                }
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Name</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorName" />
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">GST (optional)</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorGst" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Contact (optional)</label>
+                        <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" @bind="_newVendorContact" />
+                    </div>
+                </div>
+
+                <label class="text-[11px] text-slate-400 flex items-center gap-2">
+                    <input type="checkbox" class="accent-[#195de6]" @bind="_newVendorApproved" />
+                    Approved Vendor
+                </label>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button class="px-3 py-2 bg-[#344465] hover:bg-[#243047] text-white text-xs font-bold rounded" @onclick="CloseAddVendor" type="button">Cancel</button>
+                    <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded" @onclick="CreateVendorAsync" type="button" disabled="@_creatingVendor">
+                        @(_creatingVendor ? "Saving..." : "Save Vendor")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private DashboardResponse? _data;
     private bool _loading = true;
@@ -475,6 +535,16 @@ else
     private int _storeLowStockCount;
     private int _storePendingSrsCount;
     private int _storeTodaysGrnCount;
+
+    // Vendor modal
+    private bool _showAddVendor;
+    private bool _creatingVendor;
+    private string? _vendorError;
+    private string? _vendorSuccess;
+    private string _newVendorName = "";
+    private string _newVendorGst = "";
+    private string _newVendorContact = "";
+    private bool _newVendorApproved = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -516,7 +586,7 @@ else
             _pmAcceptedCount = _pmAllSent.Count(x => x.ProductionReceivedAt != null);
             _pmAllSentCount = _pmAllSent.Count;
 
-            var prod = await Api.GetProductionWorkOrdersAsync(baseUrl, stage: null);
+            var prod = await Api.GetProductionWorkOrdersAsync(baseUrl, stage: null, status: "Active");
             _pmActiveProductionCount = prod?.Count ?? 0;
 
             var queues = await Api.GetProductionManagerQualityQueuesAsync(baseUrl, limit: 800);
@@ -586,5 +656,59 @@ else
     {
         var role = Auth.CurrentUser?.Role ?? "";
         return role is "CRMManager" or "CRMStaff" ? "Enquiry & Order Pipeline" : "Work Order Status Summary";
+    }
+
+    private void OpenAddVendor()
+    {
+        _vendorError = null;
+        _vendorSuccess = null;
+        _newVendorName = "";
+        _newVendorGst = "";
+        _newVendorContact = "";
+        _newVendorApproved = true;
+        _showAddVendor = true;
+    }
+
+    private void CloseAddVendor()
+    {
+        _showAddVendor = false;
+        _vendorError = null;
+        _vendorSuccess = null;
+    }
+
+    private async Task CreateVendorAsync()
+    {
+        _vendorError = null;
+        _vendorSuccess = null;
+        if (string.IsNullOrWhiteSpace(_newVendorName))
+        {
+            _vendorError = "Vendor name is required.";
+            return;
+        }
+
+        _creatingVendor = true;
+        StateHasChanged();
+        try
+        {
+            var (v, err) = await Api.CreateVendorAsync(Auth.BaseUrl, new CreateVendorRequest(_newVendorName.Trim(),
+                string.IsNullOrWhiteSpace(_newVendorGst) ? null : _newVendorGst.Trim(),
+                string.IsNullOrWhiteSpace(_newVendorContact) ? null : _newVendorContact.Trim(),
+                _newVendorApproved));
+
+            if (v == null)
+            {
+                _vendorError = err ?? "Failed to create vendor.";
+                return;
+            }
+
+            _vendorSuccess = $"Vendor '{v.Name}' created successfully!";
+            await Task.Delay(1500);
+            _showAddVendor = false;
+        }
+        finally
+        {
+            _creatingVendor = false;
+            StateHasChanged();
+        }
     }
 }

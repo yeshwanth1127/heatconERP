@@ -176,7 +176,9 @@ public class QuotationsController : ControllerBase
 
         // Create a draft Purchase Order linked to this quotation and revision
         var year = DateTime.UtcNow.Year;
-        var count = await _db.PurchaseOrders.CountAsync(p => p.CreatedAt.Year == year, ct);
+        var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nextYearStart = yearStart.AddYears(1);
+        var count = await _db.PurchaseOrders.CountAsync(p => p.CreatedAt >= yearStart && p.CreatedAt < nextYearStart, ct);
         var orderNumber = $"PO-{year % 100}{count + 1:D4}";
 
         var po = new PurchaseOrder
@@ -292,7 +294,9 @@ public class QuotationsController : ControllerBase
         }
 
         var year = DateTime.UtcNow.Year;
-        var count = await _db.Quotations.CountAsync(q => q.CreatedAt.Year == year, ct);
+        var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var nextYearStart = yearStart.AddYears(1);
+        var count = await _db.Quotations.CountAsync(q => q.CreatedAt >= yearStart && q.CreatedAt < nextYearStart, ct);
         refNum = $"QT-{year % 100}{count + 1:D4}";
 
         var quotation = new Quotation

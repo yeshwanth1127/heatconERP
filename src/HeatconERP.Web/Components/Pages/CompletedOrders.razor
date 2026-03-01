@@ -1,0 +1,280 @@
+@page "/completed-orders"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Completed Orders - HeatconERP</PageTitle>
+
+<div class="mb-6 flex items-center justify-between">
+    <h2 class="text-lg font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+        <span class="material-symbols-outlined text-emerald-500">task_alt</span>
+        Completed Orders
+    </h2>
+    <div class="flex gap-2">
+        <div class="relative">
+            <input class="bg-[#243047] border border-[#344465] text-slate-200 text-xs px-3 py-2 rounded w-48"
+                   placeholder="Search order number..."
+                   @bind="_searchTerm"
+                   @bind:after="LoadAsync" />
+        </div>
+        <button class="px-3 py-2 bg-[#195de6] text-white text-xs font-bold uppercase rounded"
+                @onclick="LoadAsync">
+            <span class="material-symbols-outlined text-sm align-middle">refresh</span> Refresh
+        </button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="flex items-center justify-center p-12 text-slate-400">Loading Completed Orders...</div>
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Orders List -->
+        <div class="lg:col-span-1 bg-[#243047]/20 border border-[#344465] rounded-lg overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Completed</h3>
+                <p class="text-xs text-slate-500 mt-1">@_completedOrders.Count orders</p>
+            </div>
+
+            <div class="flex-1 overflow-auto industrial-scrollbar">
+                @if (_completedOrders.Count == 0)
+                {
+                    <div class="p-8 text-center text-slate-500 text-sm">No completed orders found.</div>
+                }
+                else
+                {
+                    <div class="p-4 space-y-2">
+                        @foreach (var order in _completedOrders)
+                        {
+                            var isSelected = _selectedOrderId == order.Id;
+
+                            <button type="button"
+                                    class="w-full text-left p-3 rounded-lg border transition-all
+                                           @(isSelected ? "border-emerald-500/70 bg-emerald-500/10 ring-1 ring-emerald-500/30" : "border-[#344465] hover:border-emerald-500/50 bg-[#243047]/30 hover:bg-[#243047]/50")"
+                                    @onclick="@(() => SelectOrder(order.Id))">
+                                <div class="flex items-start justify-between gap-2 mb-1">
+                                    <div class="text-sm font-bold text-emerald-400">@order.OrderNumber</div>
+                                    <div class="shrink-0 text-[10px] text-slate-500">
+                                        @if (order.WorkCompletedAt.HasValue)
+                                        {
+                                            <div class="text-right">
+                                                <div class="uppercase font-bold tracking-wider">Completed</div>
+                                                <div>@order.WorkCompletedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="text-[10px] text-slate-400 flex items-center gap-1">
+                                    <span class="material-symbols-outlined text-xs">task_alt</span>
+                                    <span>@order.CurrentStage</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Detail View -->
+        <div class="lg:col-span-2">
+            @if (_selectedOrder == null)
+            {
+                <div class="bg-[#243047]/20 border border-[#344465] rounded-lg p-8 text-center text-slate-500">
+                    Select a completed order to view details
+                </div>
+            }
+            else
+            {
+                <div class="bg-[#243047]/20 border border-[#344465] rounded-lg overflow-hidden flex flex-col">
+                    <!-- Header -->
+                    <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-sm font-bold uppercase tracking-wider text-emerald-300">@_selectedOrder.OrderNumber</h3>
+                                <p class="text-xs text-slate-400 mt-1">Created: @_selectedOrder.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</p>
+                                @if (_selectedOrder.WorkCompletedAt.HasValue)
+                                {
+                                    <p class="text-xs text-emerald-400 mt-1">Completed: @_selectedOrder.WorkCompletedAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm")</p>
+                                }
+                            </div>
+                            <div>
+                                <span class="px-3 py-1 bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold rounded">
+                                    @_selectedOrder.Status
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="flex-1 overflow-auto industrial-scrollbar p-6 space-y-6">
+                        <!-- Summary -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-[#243047]/20 border border-[#344465] p-3 rounded">
+                                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Current Stage</div>
+                                <div class="text-sm font-bold text-emerald-300">@_selectedOrder.CurrentStage</div>
+                            </div>
+                            <div class="bg-[#243047]/20 border border-[#344465] p-3 rounded">
+                                <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Status</div>
+                                <div class="text-sm font-bold text-slate-200">@_selectedOrder.Status</div>
+                            </div>
+                        </div>
+
+                        <!-- Line Items -->
+                        @if (_selectedOrder.LineItems.Count > 0)
+                        {
+                            <div class="pt-3 border-t border-[#344465]">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">Items Ordered</h4>
+                                <div class="space-y-2">
+                                    @foreach (var item in _selectedOrder.LineItems)
+                                    {
+                                        <div class="flex items-start justify-between gap-3 p-2 bg-[#111621]/30 rounded">
+                                            <div class="min-w-0">
+                                                <p class="text-xs font-semibold text-slate-200">@item.PartNumber</p>
+                                                @if (!string.IsNullOrWhiteSpace(item.Description))
+                                                {
+                                                    <p class="text-xs text-slate-500 truncate">@item.Description</p>
+                                                }
+                                            </div>
+                                            <div class="shrink-0 text-right">
+                                                <p class="text-xs font-bold text-slate-200">Qty @item.Quantity</p>
+                                                <p class="text-xs text-slate-500">@item.UnitPrice.ToString("C")</p>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- NCR History -->
+                        @if (_loadingNcrs || (_ncrHistory != null && _ncrHistory.Count > 0))
+                        {
+                            <div class="pt-3 border-t border-[#344465]">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">QC History (NCRs)</h4>
+                                @if (_loadingNcrs)
+                                {
+                                    <div class="text-xs text-slate-400">Loading QC history...</div>
+                                }
+                                else if (_ncrHistory.Count == 0)
+                                {
+                                    <div class="text-xs text-emerald-300 p-3 bg-emerald-900/10 rounded border border-emerald-500/20">
+                                        ✓ No quality issues reported (No NCRs)
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="space-y-3">
+                                        @foreach (var ncr in _ncrHistory)
+                                        {
+                                            var statusColor = ncr.Status switch
+                                            {
+                                                "Closed" => "text-emerald-300 bg-emerald-900/10 border-emerald-500/20",
+                                                "Open" => "text-rose-300 bg-rose-900/10 border-rose-500/20",
+                                                _ => "text-amber-300 bg-amber-900/10 border-amber-500/20"
+                                            };
+                                            
+                                            <div class="p-3 bg-[#111621]/30 border border-[#344465] rounded">
+                                                <div class="flex items-start justify-between gap-2 mb-1">
+                                                    <div>
+                                                        <p class="text-xs font-semibold text-slate-200">NCR-@ncr.Id.ToString().Substring(0, 8)</p>
+                                                        <p class="text-[10px] text-slate-400 mt-0.5">Stage: @ncr.Stage</p>
+                                                    </div>
+                                                    <span class="text-[10px] font-bold uppercase px-2 py-1 rounded @statusColor border">
+                                                        @ncr.Status
+                                                    </span>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(ncr.Description))
+                                                {
+                                                    <p class="text-[11px] text-slate-300 mt-2">@ncr.Description</p>
+                                                }
+                                                <p class="text-[10px] text-slate-500 mt-2">
+                                                    Created: @ncr.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")
+                                                </p>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkOrderPipelineDto> _completedOrders = [];
+    private WorkOrderPipelineDto? _selectedOrder;
+    private Guid? _selectedOrderId;
+    private List<NcrListDto> _ncrHistory = [];
+    private bool _loadingNcrs = false;
+
+    private string _searchTerm = "";
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        // Load all completed orders (those with Status = "Completed")
+        var baseUrl = Auth.BaseUrl;
+        var allOrders = await Api.GetAllWorkOrderPipelinesAsync(baseUrl, null, "Completed");
+        
+        if (allOrders != null)
+        {
+            _completedOrders = allOrders.ToList();
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var search = _searchTerm.ToLower();
+                _completedOrders = _completedOrders
+                    .Where(w => w.OrderNumber.ToLower().Contains(search))
+                    .ToList();
+            }
+
+            _completedOrders = _completedOrders
+                .OrderByDescending(w => w.WorkCompletedAt ?? w.CreatedAt)
+                .ToList();
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectOrder(Guid id)
+    {
+        _selectedOrderId = id;
+        _selectedOrder = _completedOrders.FirstOrDefault(o => o.Id == id);
+        _ncrHistory = [];
+        
+        if (_selectedOrder != null)
+        {
+            await LoadNcrHistoryAsync();
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task LoadNcrHistoryAsync()
+    {
+        if (_selectedOrder == null) return;
+
+        _loadingNcrs = true;
+        StateHasChanged();
+
+        var ncrs = await Api.GetWorkOrderNcrsAsync(Auth.BaseUrl, _selectedOrder.Id);
+        _ncrHistory = ncrs?.ToList() ?? [];
+
+        _loadingNcrs = false;
+        StateHasChanged();
+    }
+}

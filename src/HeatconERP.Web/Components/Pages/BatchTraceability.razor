@@ -11,14 +11,17 @@
         <h1 class="text-xl font-bold text-white leading-none">Batch Traceability</h1>
         <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Audit</span>
     </div>
-    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="SearchAsync">
-        <span class="material-symbols-outlined text-sm">search</span> Search
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
     </button>
 </div>
 
 <div class="bg-[#111621] border border-[#344465] p-4 mb-4">
-    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Batch Number</label>
-    <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" placeholder="Enter batch number" @bind="_batchNumber" />
+    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">Filter by Batch Number or Material</label>
+    <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" 
+           placeholder="Search batch number, SKU, grade, or material type..." 
+           @bind="_searchFilter" 
+           @bind:after="ApplyFilter" />
 </div>
 
 @if (!string.IsNullOrEmpty(_error))
@@ -26,70 +29,273 @@
     <div class="p-4 text-red-400 text-xs border border-[#344465] bg-[#111621]/60 mb-4">@_error</div>
 }
 
-@if (_results != null)
+@if (_loading)
 {
+    <div class="p-8 text-slate-400">Loading batch data...</div>
+}
+else if (_batchTree != null)
+{
+    var displayTree = string.IsNullOrWhiteSpace(_searchFilter) ? _batchTree : _filteredTree;
+    var totalBatches = displayTree?.Sum(t => t.Grades.Sum(g => g.Variants.Sum(v => v.Batches.Count))) ?? 0;
+    
     <div class="bg-[#111621] border border-[#344465] p-4">
-        <div class="text-xs font-bold uppercase tracking-wider text-slate-200 mb-3">Results (@_results.Count)</div>
-        @if (_results.Count == 0)
+        <div class="flex items-center justify-between mb-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-200">
+                All Batches (@totalBatches total)
+                @if (!string.IsNullOrWhiteSpace(_searchFilter))
+                {
+                    <span class="text-slate-500 font-normal ml-2">- filtered</span>
+                }
+            </div>
+        </div>
+        
+        @if (totalBatches == 0)
         {
-            <div class="text-slate-500 text-sm">No batches found.</div>
+            <div class="text-slate-500 text-sm">@(string.IsNullOrWhiteSpace(_searchFilter) ? "No batches found in system." : "No batches match your search.")</div>
         }
         else
         {
-            <table class="w-full text-left border-collapse text-xs">
-                <thead>
-                <tr class="text-slate-500 border-b border-[#344465]">
-                    <th class="py-2 pr-2">Batch</th>
-                    <th class="py-2 pr-2">Vendor</th>
-                    <th class="py-2 pr-2">GRN Invoice</th>
-                    <th class="py-2 pr-2">Linked WorkOrders</th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach (var r in _results)
+            <div class="space-y-3">
+                @foreach (var type in displayTree!)
                 {
-                    <tr class="border-b border-[#344465]/30">
-                        <td class="py-2 pr-2 font-semibold text-slate-200">@r.BatchNumber</td>
-                        <td class="py-2 pr-2 text-slate-300">@r.Vendor</td>
-                        <td class="py-2 pr-2 text-slate-300">@r.InvoiceNumber</td>
-                        <td class="py-2 pr-2 text-slate-400">@string.Join(", ", r.LinkedWorkOrders.Select(x => x.ToString()[..8]))</td>
-                    </tr>
+                    <div class="border border-[#344465] bg-[#243047]/20">
+                        <div class="p-3 bg-[#243047]/40 border-b border-[#344465] cursor-pointer hover:bg-[#243047]/60" 
+                             @onclick="() => ToggleType(type.Id)">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-sm text-slate-400">
+                                        @(_expandedTypes.Contains(type.Id) ? "expand_more" : "chevron_right")
+                                    </span>
+                                    <span class="text-sm font-bold text-slate-200">@type.Name</span>
+                                    @if (!string.IsNullOrWhiteSpace(type.Description))
+                                    {
+                                        <span class="text-xs text-slate-500">- @type.Description</span>
+                                    }
+                                </div>
+                                <span class="text-xs text-slate-500">@type.Grades.Sum(g => g.Variants.Sum(v => v.Batches.Count)) batches</span>
+                            </div>
+                        </div>
+
+                        @if (_expandedTypes.Contains(type.Id))
+                        {
+                            <div class="p-3 space-y-2">
+                                @foreach (var grade in type.Grades)
+                                {
+                                    <div class="border border-[#344465]/50 bg-[#111621]/50">
+                                        <div class="p-2 bg-[#243047]/20 border-b border-[#344465]/30 cursor-pointer hover:bg-[#243047]/40" 
+                                             @onclick="() => ToggleGrade(type.Id, grade.Grade)">
+                                            <div class="flex items-center justify-between">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="material-symbols-outlined text-xs text-slate-500">
+                                                        @(_expandedGrades.Contains($"{type.Id}_{grade.Grade}") ? "expand_more" : "chevron_right")
+                                                    </span>
+                                                    <span class="text-xs font-semibold text-slate-300">Grade: @grade.Grade</span>
+                                                </div>
+                                                <span class="text-xs text-slate-500">@grade.Variants.Sum(v => v.Batches.Count) batches</span>
+                                            </div>
+                                        </div>
+
+                                        @if (_expandedGrades.Contains($"{type.Id}_{grade.Grade}"))
+                                        {
+                                            <div class="p-2 space-y-2">
+                                                @foreach (var variant in grade.Variants)
+                                                {
+                                                    <div class="border border-[#344465]/30 bg-[#0a0f18]">
+                                                        <div class="p-2 bg-[#111621] border-b border-[#344465]/20 cursor-pointer hover:bg-[#1a2233]" 
+                                                             @onclick="() => ToggleVariant(type.Id, grade.Grade, variant.Id)">
+                                                            <div class="flex items-center justify-between">
+                                                                <div class="flex items-center gap-2">
+                                                                    <span class="material-symbols-outlined text-xs text-slate-600">
+                                                                        @(_expandedVariants.Contains($"{type.Id}_{grade.Grade}_{variant.Id}") ? "expand_more" : "chevron_right")
+                                                                    </span>
+                                                                    <span class="text-xs font-mono text-[#195de6]">@variant.SKU</span>
+                                                                    <span class="text-xs text-slate-500">@variant.Size - @variant.Unit</span>
+                                                                </div>
+                                                                <span class="text-xs text-slate-500">@variant.Batches.Count batches</span>
+                                                            </div>
+                                                        </div>
+
+                                                        @if (_expandedVariants.Contains($"{type.Id}_{grade.Grade}_{variant.Id}"))
+                                                        {
+                                                            <div class="p-2">
+                                                                <table class="w-full text-left border-collapse text-xs">
+                                                                    <thead>
+                                                                    <tr class="text-slate-500 border-b border-[#344465]/30">
+                                                                        <th class="py-2 pr-2">Batch</th>
+                                                                        <th class="py-2 pr-2">Vendor</th>
+                                                                        <th class="py-2 pr-2">Invoice</th>
+                                                                        <th class="py-2 pr-2 text-right">Received</th>
+                                                                        <th class="py-2 pr-2 text-right">Available</th>
+                                                                        <th class="py-2 pr-2 text-right">Reserved</th>
+                                                                        <th class="py-2 pr-2 text-right">Consumed</th>
+                                                                        <th class="py-2 pr-2">Work Orders</th>
+                                                                    </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                    @foreach (var batch in variant.Batches)
+                                                                    {
+                                                                        <tr class="border-b border-[#344465]/20 hover:bg-[#243047]/20">
+                                                                            <td class="py-2 pr-2 font-semibold text-slate-200 font-mono">@batch.BatchNumber</td>
+                                                                            <td class="py-2 pr-2 text-slate-300">@batch.Vendor</td>
+                                                                            <td class="py-2 pr-2 text-slate-400">@batch.InvoiceNumber</td>
+                                                                            <td class="py-2 pr-2 text-right text-slate-300">@batch.QuantityReceived</td>
+                                                                            <td class="py-2 pr-2 text-right text-emerald-400">@batch.QuantityAvailable</td>
+                                                                            <td class="py-2 pr-2 text-right text-amber-400">@batch.QuantityReserved</td>
+                                                                            <td class="py-2 pr-2 text-right text-slate-500">@batch.QuantityConsumed</td>
+                                                                            <td class="py-2 pr-2 text-slate-400 text-xs">
+                                                                                @if (batch.LinkedWorkOrders.Count > 0)
+                                                                                {
+                                                                                    <span>@string.Join(", ", batch.LinkedWorkOrders.Select(x => x.ToString()[..8]))</span>
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    <span class="text-slate-600">-</span>
+                                                                                }
+                                                                            </td>
+                                                                        </tr>
+                                                                    }
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 }
-                </tbody>
-            </table>
+            </div>
         }
     </div>
 }
 
 @code {
-    private string _batchNumber = "";
+    private bool _loading = true;
     private string? _error;
-    private List<BatchHistoryDto>? _results;
+    private string _searchFilter = "";
+    
+    private List<BatchTreeNodeDto>? _batchTree;
+    private List<BatchTreeNodeDto>? _filteredTree;
+    
+    private HashSet<Guid> _expandedTypes = new();
+    private HashSet<string> _expandedGrades = new();
+    private HashSet<string> _expandedVariants = new();
 
-    private async Task SearchAsync()
+    protected override async Task OnInitializedAsync()
     {
-        _error = null;
-        _results = null;
-        StateHasChanged();
+        await LoadAsync();
+    }
 
-        if (string.IsNullOrWhiteSpace(_batchNumber))
-        {
-            _error = "Batch number is required.";
-            StateHasChanged();
-            return;
-        }
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
 
         try
         {
-            _results = (await Api.GetBatchHistoryAsync(Auth.BaseUrl, _batchNumber.Trim()))?.ToList() ?? [];
+            _batchTree = (await Api.GetBatchTreeAsync(Auth.BaseUrl))?.ToList() ?? [];
+            _filteredTree = _batchTree;
+            
+            // Auto-expand first type if there's data
+            if (_batchTree?.Count > 0)
+            {
+                _expandedTypes.Add(_batchTree[0].Id);
+            }
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _error = $"Failed to load batch data: {ex.Message}";
         }
 
+        _loading = false;
         StateHasChanged();
     }
-}
 
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(_searchFilter))
+        {
+            _filteredTree = _batchTree;
+            return;
+        }
+
+        var search = _searchFilter.Trim().ToLowerInvariant();
+        var filtered = new List<BatchTreeNodeDto>();
+
+        foreach (var type in _batchTree ?? [])
+        {
+            var filteredGrades = new List<BatchTreeGradeNodeDto>();
+            
+            foreach (var grade in type.Grades)
+            {
+                var filteredVariants = grade.Variants
+                    .Select(v => new
+                    {
+                        Variant = v,
+                        FilteredBatches = v.Batches.Where(b =>
+                            b.BatchNumber.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                            v.SKU.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                            v.Grade.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                            type.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                            b.Vendor.Contains(search, StringComparison.OrdinalIgnoreCase)
+                        ).ToList()
+                    })
+                    .Where(x => x.FilteredBatches.Count > 0)
+                    .Select(x => new BatchTreeVariantNodeDto(
+                        x.Variant.Id,
+                        x.Variant.SKU,
+                        x.Variant.Grade,
+                        x.Variant.Size,
+                        x.Variant.Unit,
+                        x.FilteredBatches
+                    ))
+                    .ToList();
+
+                if (filteredVariants.Count > 0)
+                {
+                    filteredGrades.Add(new BatchTreeGradeNodeDto(grade.Grade, filteredVariants));
+                }
+            }
+
+            if (filteredGrades.Count > 0)
+            {
+                filtered.Add(new BatchTreeNodeDto(type.Id, type.Name, type.Description, filteredGrades));
+                _expandedTypes.Add(type.Id); // Auto-expand filtered results
+            }
+        }
+
+        _filteredTree = filtered;
+    }
+
+    private void ToggleType(Guid typeId)
+    {
+        if (_expandedTypes.Contains(typeId))
+            _expandedTypes.Remove(typeId);
+        else
+            _expandedTypes.Add(typeId);
+    }
+
+    private void ToggleGrade(Guid typeId, string grade)
+    {
+        var key = $"{typeId}_{grade}";
+        if (_expandedGrades.Contains(key))
+            _expandedGrades.Remove(key);
+        else
+            _expandedGrades.Add(key);
+    }
+
+    private void ToggleVariant(Guid typeId, string grade, Guid variantId)
+    {
+        var key = $"{typeId}_{grade}_{variantId}";
+        if (_expandedVariants.Contains(key))
+            _expandedVariants.Remove(key);
+        else
+            _expandedVariants.Add(key);
+    }
+}
 

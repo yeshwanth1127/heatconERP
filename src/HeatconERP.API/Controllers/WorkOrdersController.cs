@@ -398,6 +398,60 @@ public class WorkOrdersController : ControllerBase
                 "Database schema is missing table WorkOrderLineItems. Apply migrations (run `scripts/apply-all-migrations.ps1`) and restart the API.");
         }
     }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteWorkOrder(Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            var wo = await _db.WorkOrders.FirstOrDefaultAsync(w => w.Id == id, ct);
+            if (wo == null) return NotFound();
+
+            // Delete in reverse order of foreign key dependencies
+            
+            // 1. Remove quality gates
+            var qualityGates = await _db.WorkOrderQualityGates
+                .Where(g => g.WorkOrderId == id)
+                .ToListAsync(ct);
+            _db.WorkOrderQualityGates.RemoveRange(qualityGates);
+            
+            // 2. Remove NCRs
+            var ncrs = await _db.Ncrs
+                .Where(n => n.WorkOrderId == id)
+                .ToListAsync(ct);
+            _db.Ncrs.RemoveRange(ncrs);
+            
+            // 3. Remove SRSs
+            var srss = await _db.SRSs
+                .Where(s => s.WorkOrderId == id)
+                .ToListAsync(ct);
+            _db.SRSs.RemoveRange(srss);
+            
+            // 4. Remove line items
+            var lineItems = await _db.WorkOrderLineItems
+                .Where(li => li.WorkOrderId == id)
+                .ToListAsync(ct);
+            _db.WorkOrderLineItems.RemoveRange(lineItems);
+
+            // 5. Remove the work order itself
+            _db.WorkOrders.Remove(wo);
+
+            _db.ActivityLogs.Add(new ActivityLog
+            {
+                Id = Guid.NewGuid(),
+                OccurredAt = DateTime.UtcNow,
+                Tag = "AUDIT",
+                Message = $"Work order {wo.OrderNumber} deleted"
+            });
+
+            await _db.SaveChangesAsync(ct);
+            return Ok(new { deleted = true, orderNumber = wo.OrderNumber });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = $"Failed to delete work order: {ex.Message}" });
+        }
+    }
 }
 
 public record WorkOrderCardDto(
@@ -429,16 +483,6 @@ public record WorkOrderDetailDto(
     DateTime CreatedAt,
     Guid? PurchaseInvoiceId,
     IReadOnlyList<WorkOrderLineItemDto> LineItems);
-
-public record WorkOrderLineItemDto(
-    Guid Id,
-    int SortOrder,
-    string PartNumber,
-    string Description,
-    int Quantity,
-    decimal UnitPrice,
-    decimal TaxPercent,
-    decimal? LineTotal);
 
 public record UpdateWorkOrderRequest(string? Stage, string? Status, string? AssignedToUserName);
 

@@ -43,6 +43,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
     public DbSet<VendorPurchaseOrderLineItem> VendorPurchaseOrderLineItems => Set<VendorPurchaseOrderLineItem>();
     public DbSet<VendorPurchaseInvoice> VendorPurchaseInvoices => Set<VendorPurchaseInvoice>();
     public DbSet<VendorPurchaseInvoiceLineItem> VendorPurchaseInvoiceLineItems => Set<VendorPurchaseInvoiceLineItem>();
+    public DbSet<VendorInvoiceQcDecision> VendorInvoiceQcDecisions => Set<VendorInvoiceQcDecision>();
     public DbSet<GRN> GRNs => Set<GRN>();
     public DbSet<GRNLineItem> GRNLineItems => Set<GRNLineItem>();
     public DbSet<StockBatch> StockBatches => Set<StockBatch>();
@@ -226,6 +227,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<VendorPurchaseOrderLineItem>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<VendorPurchaseInvoice>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<VendorPurchaseInvoiceLineItem>().HasQueryFilter(x => !x.IsDeleted);
+        modelBuilder.Entity<VendorInvoiceQcDecision>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<GRN>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<GRNLineItem>().HasQueryFilter(x => !x.IsDeleted);
         modelBuilder.Entity<StockBatch>().HasQueryFilter(x => !x.IsDeleted);
@@ -243,6 +245,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<VendorPurchaseOrderLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<VendorPurchaseInvoice>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<VendorPurchaseInvoiceLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
+        modelBuilder.Entity<VendorInvoiceQcDecision>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<GRN>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<GRNLineItem>().Property(x => x.RowVersion).IsConcurrencyToken();
         modelBuilder.Entity<StockBatch>().Property(x => x.RowVersion).IsConcurrencyToken();
@@ -264,6 +267,7 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
         modelBuilder.Entity<MaterialVariant>().HasIndex(x => x.SKU).IsUnique();
         modelBuilder.Entity<StockBatch>().HasIndex(x => new { x.MaterialVariantId, x.BatchNumber }).IsUnique();
         modelBuilder.Entity<VendorPurchaseInvoice>().HasIndex(x => new { x.VendorId, x.InvoiceNumber }).IsUnique();
+        modelBuilder.Entity<VendorInvoiceQcDecision>().HasIndex(x => new { x.VendorPurchaseInvoiceId, x.CreatedAt });
 
         // Relationships (Restrict deletes; never cascade in inventory)
         modelBuilder.Entity<MaterialCategory>()
@@ -316,6 +320,12 @@ public class HeatconDbContext : DbContext, IHeatconDbContext
 
         modelBuilder.Entity<VendorPurchaseInvoice>()
             .HasMany(x => x.LineItems)
+            .WithOne(x => x.VendorPurchaseInvoice)
+            .HasForeignKey(x => x.VendorPurchaseInvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<VendorPurchaseInvoice>()
+            .HasMany(x => x.QcDecisions)
             .WithOne(x => x.VendorPurchaseInvoice)
             .HasForeignKey(x => x.VendorPurchaseInvoiceId)
             .OnDelete(DeleteBehavior.Restrict);

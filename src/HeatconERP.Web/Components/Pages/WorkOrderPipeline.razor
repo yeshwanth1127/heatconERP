@@ -1,0 +1,565 @@
+@page "/work-order-pipeline"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+
+<PageTitle>Work Order Pipeline - HeatconERP</PageTitle>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="mb-4 p-4 border border-rose-500/30 bg-rose-900/15 rounded-lg">
+        <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-rose-400 shrink-0 mt-0.5">error</span>
+            <div class="min-w-0 flex-1">
+                <div class="text-sm text-rose-300 font-semibold mb-1">Error</div>
+                <div class="text-xs text-rose-200 whitespace-pre-wrap">@_error</div>
+                <button @onclick="@(() => _error = null)" class="mt-2 text-xs text-rose-300 hover:text-rose-200 underline">Dismiss</button>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="mb-6 flex items-center justify-between">
+    <h2 class="text-lg font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+        <span class="material-symbols-outlined text-[#195de6]">timeline</span>
+        Work Order Pipeline
+    </h2>
+    <div class="flex gap-2">
+        <div class="relative">
+            <input class="bg-[#243047] border border-[#344465] text-slate-200 text-xs px-3 py-2 rounded w-48"
+                   placeholder="Search order number..."
+                   @bind="_searchTerm"
+                   @bind:after="LoadAsync" />
+        </div>
+        <button class="px-3 py-2 bg-[#195de6] text-white text-xs font-bold uppercase rounded"
+                @onclick="LoadAsync">
+            <span class="material-symbols-outlined text-sm align-middle">refresh</span> Refresh
+        </button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="flex items-center justify-center p-12 text-slate-400">Loading Pipeline...</div>
+}
+else
+{
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Pipeline List -->
+        <div class="lg:col-span-1 bg-[#243047]/20 border border-[#344465] rounded-lg overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Active Orders</h3>
+                <p class="text-xs text-slate-500 mt-1">@_pipelines.Count orders</p>
+            </div>
+
+            <div class="flex-1 overflow-auto industrial-scrollbar">
+                @if (_pipelines.Count == 0)
+                {
+                    <div class="p-8 text-center text-slate-500 text-sm">No work orders found.</div>
+                }
+                else
+                {
+                    <div class="p-4 space-y-2">
+                        @foreach (var pipeline in _pipelines)
+                        {
+                            var isSelected = _selectedPipelineId == pipeline.Id;
+                            var progress = CalculateProgress(pipeline.StageTimeline);
+
+                            <button type="button"
+                                    class="w-full text-left p-3 rounded-lg border transition-all
+                                           @(isSelected ? "border-[#195de6]/70 bg-[#195de6]/10 ring-1 ring-[#195de6]/30" : "border-[#344465] hover:border-[#195de6]/50 bg-[#243047]/30 hover:bg-[#243047]/50")"
+                                    @onclick="@(() => SelectPipeline(pipeline.Id))">
+                                <div class="flex items-start justify-between gap-2 mb-2">
+                                    <div>
+                                        <div class="text-sm font-bold text-[#195de6]">@pipeline.OrderNumber</div>
+                                        <div class="text-xs text-slate-400 mt-0.5">
+                                            @if (pipeline.WorkStartedAt.HasValue)
+                                            {
+                                                <span class="text-emerald-400 flex items-center gap-1">
+                                                    <span class="material-symbols-outlined text-xs">check_circle</span>
+                                                    Work in Progress
+                                                </span>
+                                            }
+                                            else if (pipeline.IsMaterialsAssigned)
+                                            {
+                                                <span class="text-emerald-400 flex items-center gap-1">
+                                                    <span class="material-symbols-outlined text-xs">inventory_2</span>
+                                                    Materials Allocated - Ready to Start
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-amber-400 flex items-center gap-1">
+                                                    <span class="material-symbols-outlined text-xs">pending</span>
+                                                    Awaiting Materials Allocation
+                                                </span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="w-full bg-[#111621] rounded-full h-1.5">
+                                    <div class="bg-[#195de6] h-1.5 rounded-full transition-all" style="width: @(progress)%"></div>
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1">@pipeline.CurrentStage</div>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Timeline Detail View -->
+        <div class="lg:col-span-2">
+            @if (_selectedPipeline == null)
+            {
+                <div class="bg-[#243047]/20 border border-[#344465] rounded-lg p-8 text-center text-slate-500">
+                    Select a work order to view its pipeline details
+                </div>
+            }
+            else
+            {
+                <div class="bg-[#243047]/20 border border-[#344465] rounded-lg overflow-hidden flex flex-col">
+                    <!-- Header -->
+                    <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-200">Order: @_selectedPipeline.OrderNumber</h3>
+                                <p class="text-xs text-slate-400 mt-1">Created: @_selectedPipeline.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</p>
+                                @if (_selectedPipeline.AcceptedAt.HasValue)
+                                {
+                                    <p class="text-xs text-emerald-400 mt-1">Accepted: @_selectedPipeline.AcceptedAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm")</p>
+                                }
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="px-3 py-1 bg-[#195de6]/20 border border-[#195de6]/50 text-[#195de6] text-xs font-bold rounded">
+                                    @_selectedPipeline.Status
+                                </span>
+                                <button @onclick="ShowDeleteConfirmAsync"
+                                        class="px-3 py-1 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 text-xs font-bold rounded transition-colors"
+                                        title="Delete Work Order">
+                                    <span class="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Content -->
+                    <div class="flex-1 overflow-auto industrial-scrollbar p-6">
+                        <!-- Start Work Button -->
+                        @if (!_selectedPipeline.WorkStartedAt.HasValue)
+                        {
+                            @if (!_selectedPipeline.IsMaterialsAssigned)
+                            {
+                                <div class="p-4 mb-6 border border-amber-500/30 bg-amber-900/10 rounded-lg">
+                                    <div class="flex items-start gap-3">
+                                        <span class="material-symbols-outlined text-amber-400">inventory_2</span>
+                                        <div>
+                                            <p class="text-sm font-bold text-amber-300 mb-1">Materials Not Yet Allocated</p>
+                                            <p class="text-xs text-amber-200">
+                                                The Store Manager must allocate materials (approve SRS) before production can begin. 
+                                                Work cannot start until materials are assigned and ready.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mb-4 p-4 border border-emerald-500/30 bg-emerald-900/10 rounded-lg">
+                                    <div class="flex items-start gap-3">
+                                        <span class="material-symbols-outlined text-emerald-400">check_circle</span>
+                                        <div>
+                                            <p class="text-sm font-bold text-emerald-300 mb-1">✓ Materials Allocated</p>
+                                            <p class="text-xs text-emerald-200">
+                                                All required materials have been allocated by the Store Manager. You can now start work on this order.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button @onclick="StartWorkAsync"
+                                        disabled="@_startingWork"
+                                        class="w-full px-4 py-3 mb-6 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold rounded transition-colors">
+                                    <span class="material-symbols-outlined text-sm align-middle mr-2">play_arrow</span>
+                                    @(_startingWork ? "Starting Work..." : "Start Work on This Order")
+                                </button>
+                            }
+                        }
+
+                        <!-- Work Timeline -->
+                        @if (_selectedPipeline.WorkStartedAt.HasValue)
+                        {
+                            <div class="mb-6 p-4 bg-emerald-900/15 border border-emerald-500/20 rounded-lg">
+                                <div class="text-xs text-emerald-300 font-bold uppercase tracking-wider mb-2">
+                                    <span class="material-symbols-outlined text-sm align-middle mr-2">check_circle</span>
+                                    Work in Progress
+                                </div>
+                                <p class="text-xs text-emerald-200">
+                                    Started: @_selectedPipeline.WorkStartedAt.Value.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                                    @if (!string.IsNullOrEmpty(_selectedPipeline.WorkStartedBy))
+                                    {
+                                        <span>by @_selectedPipeline.WorkStartedBy</span>
+                                    }
+                                </p>
+                            </div>
+                        }
+
+                        <!-- Stage Timeline -->
+                        <div class="mb-6">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-4">Production Stages</h4>
+                            <div class="space-y-3">
+                                @foreach (var stage in _selectedPipeline.StageTimeline)
+                                {
+                                    var isCompleted = stage.Status == "Completed";
+                                    var isInProgress = stage.Status == "In Progress";
+                                    var isNotStarted = stage.Status == "Not Started";
+
+                                    <div class="space-y-1">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center gap-2">
+                                                @if (isCompleted)
+                                                {
+                                                    <span class="material-symbols-outlined text-base text-emerald-400">check_circle</span>
+                                                }
+                                                else if (isInProgress)
+                                                {
+                                                    <span class="material-symbols-outlined text-base text-[#195de6] animate-pulse">radio_button_checked</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="material-symbols-outlined text-base text-slate-600">radio_button_unchecked</span>
+                                                }
+                                                <span class="text-sm font-semibold @(isInProgress ? "text-[#195de6]" : isCompleted ? "text-emerald-400" : "text-slate-400")">
+                                                    @stage.StageName
+                                                </span>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs @(isCompleted ? "text-emerald-400" : isInProgress ? "text-[#195de6]" : "text-slate-500")">
+                                                    @stage.Status
+                                                </span>
+                                                @if (_selectedPipeline.WorkStartedAt.HasValue && isInProgress)
+                                                {
+                                                    var availableStages = new[] { "Planning", "Material", "Assembly", "Testing", "QC", "Packing" }
+                                                        .Where(s => s != stage.StageName)
+                                                        .ToArray();
+                                                    
+                                                    <select class="bg-[#243047] border border-[#344465] text-slate-200 text-[10px] px-2 py-1 rounded"
+                                                            @onchange="e => UpdateStageAsync(_selectedPipeline.Id, e.Value?.ToString())">
+                                                        <option value="" selected disabled>Move to...</option>
+                                                        @foreach (var availableStage in availableStages)
+                                                        {
+                                                            <option value="@availableStage">@availableStage</option>
+                                                        }
+                                                    </select>
+                                                }
+                                            </div>
+                                        </div>
+                                        @if (stage.CompletedAt.HasValue)
+                                        {
+                                            <div class="text-xs text-slate-500 ml-8">
+                                                Completed: @stage.CompletedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")
+                                            </div>
+                                        }
+                                        else if (stage.StartedAt.HasValue)
+                                        {
+                                            <div class="text-xs text-slate-500 ml-8">
+                                                Started: @stage.StartedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")
+                                            </div>
+                                        }
+                                    </div>
+
+                                    @if (stage.StageOrder < _selectedPipeline.StageTimeline.Count - 1)
+                                    {
+                                        <div class="flex justify-center py-1">
+                                            <span class="material-symbols-outlined text-base text-slate-600">arrow_downward</span>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Line Items -->
+                        @if (_selectedPipeline.LineItems.Count > 0)
+                        {
+                            <div class="mt-6 pt-6 border-t border-[#344465]">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300 mb-3">Items Ordered</h4>
+                                <div class="space-y-2">
+                                    @foreach (var item in _selectedPipeline.LineItems)
+                                    {
+                                        <div class="flex items-start justify-between gap-3 p-2 bg-[#111621]/30 rounded">
+                                            <div class="min-w-0">
+                                                <p class="text-xs font-semibold text-slate-200">@item.PartNumber</p>
+                                                @if (!string.IsNullOrWhiteSpace(item.Description))
+                                                {
+                                                    <p class="text-xs text-slate-500 truncate">@item.Description</p>
+                                                }
+                                            </div>
+                                            <div class="shrink-0 text-right">
+                                                <p class="text-xs font-bold text-slate-200">Qty @item.Quantity</p>
+                                                <p class="text-xs text-slate-500">@item.UnitPrice.ToString("C")</p>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        
+                        <!-- Complete Work Order Button (only show if at Packing stage) -->
+                        @if (_selectedPipeline.WorkStartedAt.HasValue && _selectedPipeline.CurrentStage == "Packing")
+                        {
+                            <div class="mt-6 pt-6 border-t border-[#344465]">
+                                <button @onclick="CompleteWorkOrderAsync"
+                                        disabled="@_completingWorkOrder"
+                                        class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold rounded transition-colors">
+                                    <span class="material-symbols-outlined text-base align-middle mr-2">task_alt</span>
+                                    @(_completingWorkOrder ? "Completing..." : "Work Order Completed")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- Delete Confirmation Modal -->
+@if (_showDeleteConfirmation)
+{
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg max-w-sm w-full shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-start gap-4 mb-4">
+                    <span class="material-symbols-outlined text-rose-400 text-2xl shrink-0">warning</span>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-200 mb-1">Delete Work Order?</h3>
+                        <p class="text-sm text-slate-400">This action cannot be undone.</p>
+                    </div>
+                </div>
+                <div class="bg-[#243047]/30 border border-rose-500/20 rounded p-3 mb-4">
+                    <p class="text-xs text-slate-300"><span class="font-semibold">Order:</span> @_deleteConfirmOrderNumber</p>
+                    <p class="text-xs text-slate-400 mt-1">Permanently delete this work order and all associated data?</p>
+                </div>
+            </div>
+            <div class="flex gap-2 p-4 border-t border-[#344465] bg-[#111621]/50">
+                <button @onclick="CancelDelete"
+                        class="flex-1 px-4 py-2 bg-[#243047] hover:bg-[#344465] text-slate-200 text-xs font-bold rounded transition-colors">
+                    Cancel
+                </button>
+                <button @onclick="ConfirmDeleteAsync"
+                        disabled="@_deletingWorkOrder"
+                        class="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors">
+                    @if (_deletingWorkOrder) { <span>Deleting...</span> } else { <span>Delete</span> }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkOrderPipelineDto> _pipelines = [];
+    private WorkOrderPipelineDto? _selectedPipeline;
+    private Guid? _selectedPipelineId;
+    private string _searchTerm = "";
+    private bool _loading = true;
+    private bool _startingWork = false;
+    private string? _error;
+
+    private bool _showDeleteConfirmation = false;
+    private string? _deleteConfirmOrderNumber;
+    private Guid _deleteConfirmWorkOrderId;
+    private bool _deletingWorkOrder = false;
+    
+    private bool _completingWorkOrder = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        Console.WriteLine($"[WorkOrderPipeline] Loading pipelines... Search term: {_searchTerm}");
+        
+        var baseUrl = Auth.BaseUrl;
+        var pipelines = await Api.GetAllWorkOrderPipelinesAsync(baseUrl, string.IsNullOrEmpty(_searchTerm) ? null : _searchTerm, "Active");
+        
+        if (pipelines != null)
+        {
+            Console.WriteLine($"[WorkOrderPipeline] Loaded {pipelines.Count} pipelines");
+            _pipelines = pipelines.ToList();
+            
+            // If a pipeline was selected, refresh it with the latest data
+            if (_selectedPipelineId.HasValue)
+            {
+                var updatedPipeline = _pipelines.FirstOrDefault(p => p.Id == _selectedPipelineId);
+                if (updatedPipeline != null)
+                {
+                    Console.WriteLine($"[WorkOrderPipeline] Refreshing selected pipeline {updatedPipeline.OrderNumber} - Stage: {updatedPipeline.CurrentStage}");
+                    _selectedPipeline = updatedPipeline;
+                }
+                else
+                {
+                    Console.WriteLine($"[WorkOrderPipeline] Selected pipeline ID {_selectedPipelineId} not found in results");
+                }
+            }
+        }
+        else
+        {
+            _error = "Failed to load work order pipeline data.";
+            Console.WriteLine("[WorkOrderPipeline] Failed to load pipeline data");
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void SelectPipeline(Guid id)
+    {
+        _selectedPipelineId = id;
+        _selectedPipeline = _pipelines.FirstOrDefault(p => p.Id == id);
+        StateHasChanged();
+    }
+
+    private async Task StartWorkAsync()
+    {
+        if (_selectedPipeline == null) return;
+
+        _startingWork = true;
+        _error = null;
+        StateHasChanged();
+
+        var baseUrl = Auth.BaseUrl;
+        var currentUser = Auth.CurrentUser?.Username ?? "System";
+        var success = await Api.StartWorkOrderAsync(baseUrl, _selectedPipeline.Id, currentUser);
+
+        if (success)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            _error = "Failed to start work on this order. Please ensure materials are assigned.";
+        }
+
+        _startingWork = false;
+        StateHasChanged();
+    }
+
+    private async Task UpdateStageAsync(Guid workOrderId, string? stage)
+    {
+        if (string.IsNullOrWhiteSpace(stage)) return;
+
+        Console.WriteLine($"[WorkOrderPipeline] Updating stage to: {stage} for WO: {workOrderId}");
+        
+        _error = null;
+        StateHasChanged();
+        
+        var (success, errorMessage, blockers) = await Api.UpdateWorkOrderStageAsync(Auth.BaseUrl, workOrderId, stage);
+        
+        Console.WriteLine($"[WorkOrderPipeline] Update result: {success}");
+        
+        if (success)
+        {
+            // Reload the pipeline data to reflect the stage change
+            Console.WriteLine("[WorkOrderPipeline] Reloading pipeline data...");
+            await LoadAsync();
+            
+            if (_selectedPipeline != null)
+            {
+                Console.WriteLine($"[WorkOrderPipeline] Selected pipeline after reload - Current Stage: {_selectedPipeline.CurrentStage}");
+                Console.WriteLine($"[WorkOrderPipeline] Timeline statuses: {string.Join(", ", _selectedPipeline.StageTimeline.Select(s => $"{s.StageName}={s.Status}"))}");
+            }
+            
+            StateHasChanged();
+        }
+        else
+        {
+            if (blockers?.Count > 0)
+            {
+                _error = $"{errorMessage ?? "Stage move blocked"}\n\nBlockers:\n" + string.Join("\n", blockers.Select(b => $"• {b}"));
+            }
+            else
+            {
+                _error = errorMessage ?? "Failed to update stage.";
+            }
+            Console.WriteLine($"[WorkOrderPipeline] Error: {_error}");
+            StateHasChanged();
+        }
+    }
+
+    private int CalculateProgress(IReadOnlyList<WorkOrderStageTimelineDto> stages)
+    {
+        if (stages.Count == 0) return 0;
+        var completed = stages.Count(s => s.Status == "Completed");
+        return (completed * 100) / stages.Count;
+    }
+
+    private async Task ShowDeleteConfirmAsync()
+    {
+        if (_selectedPipeline == null) return;
+        _deleteConfirmOrderNumber = _selectedPipeline.OrderNumber;
+        _deleteConfirmWorkOrderId = _selectedPipeline.Id;
+        _showDeleteConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteConfirmation = false;
+        _deleteConfirmOrderNumber = null;
+        _deleteConfirmWorkOrderId = Guid.Empty;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        _deletingWorkOrder = true;
+        StateHasChanged();
+
+        var (ok, error) = await Api.DeleteWorkOrderAsync(Auth.BaseUrl, _deleteConfirmWorkOrderId);
+        _deletingWorkOrder = false;
+
+        if (!ok)
+        {
+            _error = error ?? "Failed to delete work order.";
+            _showDeleteConfirmation = false;
+            StateHasChanged();
+            return;
+        }
+
+        _showDeleteConfirmation = false;
+        _selectedPipelineId = null;
+        _selectedPipeline = null;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task CompleteWorkOrderAsync()
+    {
+        if (_selectedPipeline == null) return;
+        
+        _completingWorkOrder = true;
+        StateHasChanged();
+
+        var (ok, error) = await Api.CompleteWorkOrderAsync(Auth.BaseUrl, _selectedPipeline.Id);
+        _completingWorkOrder = false;
+
+        if (!ok)
+        {
+            _error = error ?? "Failed to complete work order.";
+            StateHasChanged();
+            return;
+        }
+
+        // Reload and navigate away from pipeline
+        await LoadAsync();
+        _selectedPipelineId = null;
+        _selectedPipeline = null;
+        StateHasChanged();
+    }
+}

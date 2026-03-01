@@ -1,0 +1,42 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["HeatconERP.slnx", "."]
+COPY ["src/HeatconERP.Web/HeatconERP.Web.csproj", "src/HeatconERP.Web/"]
+COPY ["src/HeatconERP.Application/HeatconERP.Application.csproj", "src/HeatconERP.Application/"]
+COPY ["src/HeatconERP.Domain/HeatconERP.Domain.csproj", "src/HeatconERP.Domain/"]
+COPY ["src/HeatconERP.Infrastructure/HeatconERP.Infrastructure.csproj", "src/HeatconERP.Infrastructure/"]
+
+# Install Node.js for Tailwind CSS build
+RUN apt-get update && apt-get install -y nodejs npm && rm -rf /var/lib/apt/lists/*
+
+# Restore dependencies
+RUN dotnet restore "HeatconERP.slnx"
+
+# Copy source code
+COPY . .
+
+# Build Tailwind CSS
+WORKDIR "/src/src/HeatconERP.Web"
+RUN npm install
+RUN npm run build
+
+# Build .NET project
+RUN dotnet build "HeatconERP.Web.csproj" -c Release -o /app/build
+
+# Publish stage
+FROM build AS publish
+RUN dotnet publish "HeatconERP.Web.csproj" -c Release -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY --from=publish /app/publish .
+
+EXPOSE 5118
+ENV ASPNETCORE_URLS=http://+:5118
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "HeatconERP.Web.dll"]

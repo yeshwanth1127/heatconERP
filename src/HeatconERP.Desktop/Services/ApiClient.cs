@@ -16,7 +16,7 @@ public class ApiClient
         _http = new HttpClient
         {
             BaseAddress = new Uri(_baseUrl),
-            Timeout = TimeSpan.FromSeconds(10)
+            Timeout = TimeSpan.FromSeconds(60)
         };
         // Allow self-signed certs in dev
         _http.DefaultRequestHeaders.Add("User-Agent", "HeatconERP.Desktop/1.0");

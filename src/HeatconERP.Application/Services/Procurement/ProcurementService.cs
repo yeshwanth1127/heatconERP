@@ -354,8 +354,10 @@ public class ProcurementService : IProcurementService
         return inv;
     }
 
-    public async Task<GRN> AcceptVendorInvoiceAndCreateGrnDraftAsync(Guid vendorPurchaseInvoiceId, CancellationToken ct = default)
+    public async Task<GRN> AcceptVendorInvoiceAndCreateGrnDraftAsync(Guid vendorPurchaseInvoiceId, string description, string? decidedBy, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(description)) throw new InvalidOperationException("QC accept description is required.");
+
         var inv = await _db.VendorPurchaseInvoices
             .Include(x => x.VendorPurchaseOrder)
             .Include(x => x.LineItems)
@@ -366,9 +368,17 @@ public class ProcurementService : IProcurementService
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
 
         var existingGrn = await _db.GRNs.FirstOrDefaultAsync(g => g.VendorPurchaseInvoiceId == vendorPurchaseInvoiceId, ct);
-        if (existingGrn != null) return existingGrn;
+        if (existingGrn != null)
+        {
+            inv.Status = VendorInvoiceStatus.Accepted;
+            _db.VendorInvoiceQcDecisions.Add(BuildQcDecision(inv.Id, "Accepted", description, decidedBy));
+            await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return existingGrn;
+        }
 
         inv.Status = VendorInvoiceStatus.Accepted;
+        _db.VendorInvoiceQcDecisions.Add(BuildQcDecision(inv.Id, "Accepted", description, decidedBy));
 
         var grn = new GRN
         {
@@ -391,13 +401,47 @@ public class ProcurementService : IProcurementService
                 BatchNumber = batchNumber,
                 QuantityReceived = li.Quantity,
                 UnitPrice = li.UnitPrice,
-                QualityStatus = QualityStatus.Approved
+                QualityStatus = QualityStatus.Approved  // Auto-approved since invoice was already QC-accepted
             });
         }
 
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return grn;
+    }
+
+    public async Task RejectVendorInvoiceAsync(Guid vendorPurchaseInvoiceId, string description, string? decidedBy, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(description)) throw new InvalidOperationException("QC decline description is required.");
+
+        var inv = await _db.VendorPurchaseInvoices
+            .FirstOrDefaultAsync(x => x.Id == vendorPurchaseInvoiceId, ct);
+        if (inv == null) throw new InvalidOperationException("Vendor invoice not found.");
+
+        inv.Status = VendorInvoiceStatus.Rejected;
+        _db.VendorInvoiceQcDecisions.Add(BuildQcDecision(inv.Id, "Declined", description, decidedBy));
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<VendorInvoiceQcDecision>> GetVendorInvoiceDeclineHistoryAsync(Guid vendorPurchaseInvoiceId, CancellationToken ct = default)
+    {
+        return await _db.VendorInvoiceQcDecisions.AsNoTracking()
+            .Where(x => x.VendorPurchaseInvoiceId == vendorPurchaseInvoiceId && x.Decision == "Declined")
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+    }
+
+    private static VendorInvoiceQcDecision BuildQcDecision(Guid invoiceId, string decision, string description, string? decidedBy)
+    {
+        return new VendorInvoiceQcDecision
+        {
+            Id = Guid.NewGuid(),
+            VendorPurchaseInvoiceId = invoiceId,
+            Decision = decision,
+            Description = description.Trim(),
+            DecidedBy = string.IsNullOrWhiteSpace(decidedBy) ? "System" : decidedBy.Trim()
+        };
     }
 
     public async Task<IReadOnlyList<Guid>> SubmitGrnDraftAsync(Guid grnId, string? invoiceNumber, DateTime? receivedDate, IReadOnlyList<SubmitGrnDraftLine> lines, CancellationToken ct = default)
@@ -514,6 +558,17 @@ public class ProcurementService : IProcurementService
 
         return $"{prefix}{(max + 1):D4}";
     }
-}
 
+    public async Task<bool> CheckGrnQcAllApprovedAsync(Guid grnId, CancellationToken ct = default)
+    {
+        var grn = await _db.GRNs
+            .Include(g => g.LineItems)
+            .FirstOrDefaultAsync(g => g.Id == grnId, ct);
+        if (grn == null) throw new InvalidOperationException("GRN not found.");
+
+        if (grn.LineItems.Count == 0) return false;
+        return grn.LineItems.All(li => li.QualityStatus == QualityStatus.Approved);
+    }
+
+}
 

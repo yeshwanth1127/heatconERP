@@ -221,6 +221,60 @@
                         }
                     </div>
                 </div>
+
+                <div class="mt-6 bg-[#243047]/10 border border-[#344465] p-4">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">history</span>
+                            NCR History (All)
+                        </div>
+                        <button class="px-2 py-1 bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-200 text-[10px] font-bold rounded"
+                                @onclick="LoadAllNcrsAsync"
+                                disabled="@_allNcrLoading">
+                            @(_allNcrLoading ? "Loading..." : "Refresh")
+                        </button>
+                    </div>
+
+                    @if (_allNcrs.Count == 0)
+                    {
+                        <div class="text-slate-500 text-sm">No NCRs found.</div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach (var ncr in _allNcrs.OrderByDescending(n => n.CreatedAt))
+                            {
+                                var isOpen = ncr.Status == "Open";
+                                var borderClass = isOpen ? "border-rose-500/30 bg-rose-900/10" : "border-emerald-500/20 bg-emerald-900/10";
+                                var statusColor = isOpen ? "text-rose-300 bg-rose-600/15 border-rose-500/20" : "text-emerald-300 bg-emerald-600/15 border-emerald-500/20";
+                                
+                                <div class="@($"border p-3 {borderClass} rounded-lg")">
+                                    <div class="flex items-start justify-between gap-2 mb-2">
+                                        <div class="text-xs font-bold @(isOpen ? "text-rose-300" : "text-emerald-300")">NCR-@ncr.Id.ToString().Substring(0, 8)</div>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold @statusColor border">@ncr.Status</span>
+                                    </div>
+                                    <div class="text-[11px] text-slate-400 mb-1">
+                                        <strong class="text-slate-200">Stage:</strong> @ncr.Stage
+                                    </div>
+                                    <div class="text-[11px] text-slate-400 mb-2">@ncr.Description</div>
+                                    <div class="text-[10px] text-slate-500 space-y-1 border-t border-[#344465] pt-2 mt-2">
+                                        <div><strong class="text-slate-300">Created:</strong> @ncr.CreatedAt.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                        <div><strong class="text-slate-300">By:</strong> @ncr.CreatedBy</div>
+                                        @if (ncr.ClosedAt.HasValue)
+                                        {
+                                            <div><strong class="text-slate-300">Closed:</strong> @ncr.ClosedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")</div>
+                                            <div><strong class="text-slate-300">By:</strong> @(ncr.ClosedBy ?? "N/A")</div>
+                                            @if (!string.IsNullOrEmpty(ncr.Disposition))
+                                            {
+                                                <div><strong class="text-slate-300">Disposition:</strong> @ncr.Disposition</div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
             }
         </div>
     </aside>
@@ -250,7 +304,9 @@
 
     private bool _ncrLoading;
     private bool _ncrClosing;
+    private bool _allNcrLoading;
     private List<NcrListDto> _openNcrs = [];
+    private List<NcrListDto> _allNcrs = [];
     private string _closeDisposition = "Rework";
     private string _closeNotes = "";
 
@@ -308,6 +364,7 @@
         _actionSuccess = null;
         _summary = null;
         _openNcrs = [];
+        _allNcrs = [];
 
         // Keep URL in sync for deep-linking.
         if (QueryWorkOrderId != id)
@@ -327,6 +384,7 @@
         _ncrDescription = "";
 
         await LoadOpenNcrsAsync();
+        await LoadAllNcrsAsync();
         StateHasChanged();
     }
 
@@ -357,6 +415,7 @@
             _actionSuccess = $"QC recorded. Gate is now {res.GateStatus}.";
             _summary = await Api.GetWorkOrderQualitySummaryAsync(Auth.BaseUrl, _selectedWoId.Value);
             await LoadOpenNcrsAsync();
+            await LoadAllNcrsAsync();
         }
         finally
         {
@@ -377,6 +436,22 @@
         finally
         {
             _ncrLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAllNcrsAsync()
+    {
+        if (!_selectedWoId.HasValue) return;
+        _allNcrLoading = true;
+        StateHasChanged();
+        try
+        {
+            _allNcrs = (await Api.GetWorkOrderNcrsAsync(Auth.BaseUrl, _selectedWoId.Value))?.ToList() ?? [];
+        }
+        finally
+        {
+            _allNcrLoading = false;
             StateHasChanged();
         }
     }
@@ -402,6 +477,7 @@
             _actionSuccess = "NCR closed. Record a PASS QC check for that stage to unblock.";
             _summary = await Api.GetWorkOrderQualitySummaryAsync(Auth.BaseUrl, _selectedWoId.Value);
             await LoadOpenNcrsAsync();
+            await LoadAllNcrsAsync();
         }
         finally
         {

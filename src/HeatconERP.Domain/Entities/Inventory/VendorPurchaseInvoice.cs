@@ -16,6 +16,7 @@ public class VendorPurchaseInvoice : BaseEntity
     public VendorInvoiceStatus Status { get; set; } = VendorInvoiceStatus.Pending;
 
     public ICollection<VendorPurchaseInvoiceLineItem> LineItems { get; set; } = [];
+    public ICollection<VendorInvoiceQcDecision> QcDecisions { get; set; } = [];
 }
 
 

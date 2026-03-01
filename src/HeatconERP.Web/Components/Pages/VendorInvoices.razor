@@ -98,12 +98,18 @@
                 }
             </div>
             <div class="flex items-center gap-2 shrink-0">
-                @if (_detail != null && _detail.Status == "Pending")
+                @if (_detail != null && (_detail.Status == "Pending" || _detail.Status == "Rejected"))
                 {
                     <button class="px-3 py-2 bg-[#195de6] hover:bg-[#195de6]/90 text-white text-xs font-bold rounded"
                             @onclick="AcceptAsync"
                             disabled="@_accepting">
-                        @(_accepting ? "Accepting..." : "Accept → Create GRN")
+                        @(_accepting ? "Accepting..." : "Accept for QC")
+                    </button>
+
+                    <button class="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded"
+                            @onclick="DeclineAsync"
+                            disabled="@_accepting">
+                        @(_accepting ? "Saving..." : "Decline QC")
                     </button>
                 }
             </div>
@@ -129,6 +135,16 @@
                     Date: <span class="text-slate-200 font-semibold">@_detail.InvoiceDate.ToLocalTime().ToString("dd MMM yyyy")</span><br />
                     Status: <span class="text-slate-200 font-semibold">@_detail.Status</span>
                 </div>
+
+                @if (_detail.Status == "Pending" || _detail.Status == "Rejected")
+                {
+                    <div class="bg-[#243047]/20 border border-[#344465] p-3 mb-4">
+                        <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-2">QC Decision Description</label>
+                        <textarea class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200 min-h-[72px]"
+                                  placeholder="Add reason/notes for accepting or declining this invoice"
+                                  @bind="_qcDecisionDescription"></textarea>
+                    </div>
+                }
 
                 <div class="bg-[#243047]/20 border border-[#344465] p-3">
                     <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Line Items</div>
@@ -163,6 +179,29 @@
                         </table>
                     }
                 </div>
+
+                <div class="bg-[#243047]/20 border border-[#344465] p-3 mt-4">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Previous QC Declines</div>
+                    @if (_declineHistory.Count == 0)
+                    {
+                        <div class="text-xs text-slate-500">No previous decline records for this invoice.</div>
+                    }
+                    else
+                    {
+                        <div class="space-y-2">
+                            @foreach (var item in _declineHistory)
+                            {
+                                <div class="border border-[#344465] bg-[#111621]/40 rounded p-2">
+                                    <div class="text-[11px] text-slate-400">
+                                        <span class="text-slate-200 font-semibold">@item.DecidedBy</span>
+                                        · @item.CreatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                                    </div>
+                                    <div class="text-xs text-slate-300 mt-1">@item.Description</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
             }
         </div>
     </aside>
@@ -185,6 +224,8 @@
 
     private Guid? _selectedId;
     private VendorInvoiceDetailDto? _detail;
+    private string _qcDecisionDescription = "";
+    private List<VendorInvoiceQcHistoryDto> _declineHistory = [];
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -213,7 +254,10 @@
             _selectedId = InvoiceId.Value;
 
         if (_selectedId.HasValue)
+        {
             _detail = await Api.GetVendorInvoiceByIdAsync(Auth.BaseUrl, _selectedId.Value);
+            _declineHistory = (await Api.GetVendorInvoiceQcDeclineHistoryAsync(Auth.BaseUrl, _selectedId.Value))?.ToList() ?? [];
+        }
 
         _loading = false;
         StateHasChanged();
@@ -244,16 +288,32 @@
         _selectedId = id;
         _detailError = null;
         _actionSuccess = null;
+        _qcDecisionDescription = "";
         StateHasChanged();
 
         _detail = await Api.GetVendorInvoiceByIdAsync(Auth.BaseUrl, id);
-        if (_detail == null) _detailError = "Failed to load vendor invoice details.";
+        if (_detail == null)
+        {
+            _detailError = "Failed to load vendor invoice details.";
+            StateHasChanged();
+            return;
+        }
+
+        _declineHistory = (await Api.GetVendorInvoiceQcDeclineHistoryAsync(Auth.BaseUrl, id))?.ToList() ?? [];
+
         StateHasChanged();
     }
 
     private async Task AcceptAsync()
     {
         if (_detail == null) return;
+        if (string.IsNullOrWhiteSpace(_qcDecisionDescription))
+        {
+            _detailError = "Description is required to accept or decline QC.";
+            StateHasChanged();
+            return;
+        }
+
         _accepting = true;
         _detailError = null;
         _actionSuccess = null;
@@ -261,16 +321,67 @@
 
         try
         {
-            var (res, err) = await Api.AcceptVendorInvoiceAsync(Auth.BaseUrl, _detail.Id);
+            var req = new VendorInvoiceQcDecisionRequest(_qcDecisionDescription.Trim(), Auth.CurrentUser?.Username);
+            var (res, err) = await Api.AcceptVendorInvoiceAsync(Auth.BaseUrl, _detail.Id, req);
             if (res == null)
             {
-                _detailError = err ?? "Failed to accept vendor invoice.";
+                _detailError = $"Failed to accept vendor invoice: {err ?? "No response from server"}";
                 return;
             }
 
-            _actionSuccess = $"GRN draft created: GRN-{res.GrnId.ToString()[..8]}. Opening GRN...";
-            await LoadAsync();
+            if (res.GrnId == Guid.Empty)
+            {
+                _detailError = "GRN was not created - invalid GRN ID returned.";
+                return;
+            }
+
+            _actionSuccess = $"Invoice accepted! GRN created: {res.GrnId}. Navigating...";
+            StateHasChanged();
+            await Task.Delay(500); // Brief delay to show success message
+            
+            // Navigate directly to the GRN page
             Nav.NavigateTo($"/grn?grnId={res.GrnId}");
+        }
+        finally
+        {
+            _accepting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeclineAsync()
+    {
+        if (_detail == null) return;
+        if (string.IsNullOrWhiteSpace(_qcDecisionDescription))
+        {
+            _detailError = "Description is required to accept or decline QC.";
+            StateHasChanged();
+            return;
+        }
+
+        _accepting = true;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        try
+        {
+            var req = new VendorInvoiceQcDecisionRequest(_qcDecisionDescription.Trim(), Auth.CurrentUser?.Username);
+            var (ok, err) = await Api.DeclineVendorInvoiceAsync(Auth.BaseUrl, _detail.Id, req);
+            if (!ok)
+            {
+                _detailError = err ?? "Failed to decline vendor invoice.";
+                return;
+            }
+
+            _actionSuccess = "Vendor invoice QC declined and recorded.";
+            _qcDecisionDescription = "";
+            await LoadAsync();
+
+            _selectedId = _detail.Id;
+            _detail = await Api.GetVendorInvoiceByIdAsync(Auth.BaseUrl, _detail.Id);
+            _declineHistory = (await Api.GetVendorInvoiceQcDeclineHistoryAsync(Auth.BaseUrl, _detail.Id))?.ToList() ?? [];
+            StateHasChanged();
         }
         finally
         {

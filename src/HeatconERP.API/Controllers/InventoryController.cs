@@ -104,6 +104,86 @@ public class InventoryController : ControllerBase
         return Ok(dto);
     }
 
+    [HttpGet("batch-tree")]
+    public async Task<ActionResult<IReadOnlyList<BatchTreeNodeDto>>> GetBatchTree(CancellationToken ct)
+    {
+        var categories = await _db.MaterialCategories
+            .AsNoTracking()
+            .OrderBy(c => c.Name)
+            .Select(c => new { c.Id, c.Name, c.Description })
+            .ToListAsync(ct);
+
+        var variants = await _db.MaterialVariants
+            .AsNoTracking()
+            .Select(v => new
+            {
+                v.Id,
+                v.MaterialCategoryId,
+                v.SKU,
+                v.Grade,
+                v.Size,
+                v.Unit
+            })
+            .ToListAsync(ct);
+
+        var batches = await _db.StockBatches
+            .AsNoTracking()
+            .Include(b => b.Vendor)
+            .Include(b => b.GRNLineItem)
+            .ThenInclude(li => li.GRN)
+            .OrderBy(b => b.CreatedAt)
+            .ToListAsync(ct);
+
+        var batchesByVariant = batches
+            .GroupBy(b => b.MaterialVariantId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var dto = categories
+            .Select(c =>
+            {
+                var inCat = variants.Where(v => v.MaterialCategoryId == c.Id).ToList();
+                var grades = inCat
+                    .GroupBy(v => string.IsNullOrWhiteSpace(v.Grade) ? "Unspecified" : v.Grade.Trim())
+                    .OrderBy(g => g.Key)
+                    .Select(g =>
+                        new BatchTreeGradeNodeDto(
+                            g.Key,
+                            g.OrderBy(v => v.SKU).Select(v =>
+                            {
+                                var vBatches = batchesByVariant.GetValueOrDefault(v.Id) ?? [];
+                                return new BatchTreeVariantNodeDto(
+                                    v.Id,
+                                    v.SKU,
+                                    v.Grade,
+                                    v.Size,
+                                    v.Unit,
+                                    vBatches.Select(b => new BatchTreeBatchDto(
+                                        b.Id,
+                                        b.BatchNumber,
+                                        b.Vendor.Name,
+                                        b.GRNLineItem.GRN.InvoiceNumber,
+                                        b.GRNLineItem.GRN.Id,
+                                        b.QuantityReceived,
+                                        b.QuantityAvailable,
+                                        b.QuantityReserved,
+                                        b.QuantityConsumed,
+                                        b.Transactions.Select(t => t.LinkedWorkOrderId).Where(x => x != null).Distinct().Cast<Guid>().ToList()
+                                    )).ToList()
+                                );
+                            }).Where(vn => vn.Batches.Count > 0).ToList()
+                        )
+                    )
+                    .Where(gn => gn.Variants.Count > 0)
+                    .ToList();
+
+                return new BatchTreeNodeDto(c.Id, c.Name, c.Description, grades);
+            })
+            .Where(x => x.Grades.Count > 0)
+            .ToList();
+
+        return Ok(dto);
+    }
+
     // Material hierarchy for Production/Store UIs (Type/Category -> Grades -> Variants) with stock totals.
     [HttpGet("material-tree")]
     public async Task<ActionResult<IReadOnlyList<MaterialTypeNodeDto>>> GetMaterialTree(CancellationToken ct)
@@ -213,4 +293,26 @@ public record MaterialVariantNodeDto(
     decimal Reserved,
     decimal Consumed);
 
+public record BatchTreeNodeDto(Guid Id, string Name, string? Description, IReadOnlyList<BatchTreeGradeNodeDto> Grades);
 
+public record BatchTreeGradeNodeDto(string Grade, IReadOnlyList<BatchTreeVariantNodeDto> Variants);
+
+public record BatchTreeVariantNodeDto(
+    Guid Id,
+    string SKU,
+    string Grade,
+    string Size,
+    string Unit,
+    IReadOnlyList<BatchTreeBatchDto> Batches);
+
+public record BatchTreeBatchDto(
+    Guid Id,
+    string BatchNumber,
+    string Vendor,
+    string InvoiceNumber,
+    Guid GrnId,
+    decimal QuantityReceived,
+    decimal QuantityAvailable,
+    decimal QuantityReserved,
+    decimal QuantityConsumed,
+    IReadOnlyList<Guid> LinkedWorkOrders);

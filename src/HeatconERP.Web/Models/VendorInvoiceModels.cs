@@ -29,6 +29,10 @@ public record VendorInvoiceCreatedDto(Guid Id, Guid VendorPurchaseOrderId, strin
 
 public record VendorInvoiceAcceptedDto(Guid VendorPurchaseInvoiceId, Guid GrnId);
 
+public record GrnQcStatusDto(Guid GrnId, bool AllApproved, int PendingCount, int ApprovedCount, int RejectedCount);
+
+public record VendorInvoiceQcDecisionRequest(string Description, string? DecidedBy);
+
+public record VendorInvoiceQcHistoryDto(Guid Id, string Decision, string Description, string DecidedBy, DateTime CreatedAt);
+
 public record VendorPoCreatedDto(Guid Id, Guid VendorId, DateTime OrderDate, string Status);
-
-

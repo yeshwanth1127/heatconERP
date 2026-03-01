@@ -151,6 +151,7 @@ public class ProcurementController : ControllerBase
         [FromQuery] Guid? vendorId = null,
         [FromQuery] DateTime? from = null,
         [FromQuery] DateTime? to = null,
+        [FromQuery] bool qcPassedOnly = false,
         CancellationToken ct = default)
     {
         if (limit <= 0) limit = 50;
@@ -170,6 +171,9 @@ public class ProcurementController : ControllerBase
 
         if (to.HasValue)
             q = q.Where(g => g.ReceivedDate <= to.Value);
+
+        if (qcPassedOnly)
+            q = q.Where(g => g.LineItems.All(li => li.QualityStatus == QualityStatus.Approved));
 
         var items = await q
             .OrderByDescending(g => g.ReceivedDate)
@@ -290,7 +294,195 @@ public class ProcurementController : ControllerBase
 
         return Ok(dto);
     }
+    
+    // Incoming Material QC endpoints
+    [HttpGet("grns/pending-qc")]
+    public async Task<ActionResult<IReadOnlyList<GrnQcListDto>>> GetPendingQcGrns([FromQuery] int limit = 100, CancellationToken ct = default)
+    {
+        if (limit <= 0) limit = 100;
+        if (limit > 500) limit = 500;
+
+        var grns = await _db.GRNs.AsNoTracking()
+            .Include(g => g.VendorPurchaseOrder)
+            .ThenInclude(po => po.Vendor)
+            .Include(g => g.LineItems)
+            .OrderByDescending(g => g.ReceivedDate)
+            .ThenByDescending(g => g.CreatedAt)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        var dtos = grns.Select(g =>
+        {
+            var totalLines = g.LineItems.Count;
+            var pendingLines = g.LineItems.Count(li => li.QualityStatus == QualityStatus.PendingQC);
+            var qcStatus = pendingLines == totalLines ? "Pending" : 
+                           pendingLines > 0 ? "Partial" : "Complete";
+
+            return new GrnQcListDto(
+                g.Id,
+                g.VendorPurchaseOrder.Vendor.Name,
+                g.ReceivedDate,
+                g.InvoiceNumber,
+                totalLines,
+                pendingLines,
+                qcStatus);
+        }).ToList();
+
+        return Ok(dtos);
+    }
+
+    [HttpGet("grns/{grnId:guid}/qc-detail")]
+    public async Task<ActionResult<GrnQcDetailDto>> GetGrnQcDetail(Guid grnId, CancellationToken ct = default)
+    {
+        var grn = await _db.GRNs.AsNoTracking()
+            .Include(g => g.VendorPurchaseOrder)
+            .ThenInclude(po => po.Vendor)
+            .Include(g => g.LineItems)
+            .ThenInclude(li => li.MaterialVariant)
+            .FirstOrDefaultAsync(g => g.Id == grnId, ct);
+
+        if (grn == null) return NotFound();
+
+        var totalLines = grn.LineItems.Count;
+        var pendingLines = grn.LineItems.Count(li => li.QualityStatus == QualityStatus.PendingQC);
+        var qcStatus = pendingLines == totalLines ? "Pending" : 
+                       pendingLines > 0 ? "Partial" : "Complete";
+
+        var dto = new GrnQcDetailDto(
+            grn.Id,
+            grn.VendorPurchaseOrder.Vendor.Name,
+            grn.InvoiceNumber,
+            grn.ReceivedDate,
+            qcStatus,
+            grn.LineItems
+                .OrderBy(li => li.CreatedAt)
+                .Select(li => new GrnQcLineDto(
+                    li.Id,
+                    li.MaterialVariant.SKU,
+                    li.MaterialVariant.Grade,
+                    li.MaterialVariant.Size,
+                    li.MaterialVariant.Unit,
+                    li.BatchNumber,
+                    li.QuantityReceived,
+                    li.UnitPrice,
+                    li.QualityStatus.ToString()))
+                .ToList());
+
+        return Ok(dto);
+    }
+
+    [HttpPost("grns/lines/{lineId:guid}/approve")]
+    public async Task<ActionResult> ApproveGrnLine(Guid lineId, [FromBody] ApproveGrnLineRequest req, CancellationToken ct = default)
+    {
+        var line = await _db.GRNLineItems
+            .Include(li => li.GRN)
+            .FirstOrDefaultAsync(li => li.Id == lineId, ct);
+
+        if (line == null) return NotFound();
+
+        if (line.QualityStatus != QualityStatus.PendingQC)
+            return BadRequest("Line already processed.");
+
+        // Approve the line
+        line.QualityStatus = QualityStatus.Approved;
+
+        // Create stock batch (make material available)
+        var batch = new Domain.Entities.Inventory.StockBatch
+        {
+            Id = Guid.NewGuid(),
+            MaterialVariantId = line.MaterialVariantId,
+            BatchNumber = line.BatchNumber,
+            GRNLineItemId = line.Id,
+            VendorId = line.GRN.VendorPurchaseOrder.VendorId,
+            QuantityReceived = line.QuantityReceived,
+            QuantityAvailable = line.QuantityReceived,
+            QuantityReserved = 0,
+            QuantityConsumed = 0,
+            UnitPrice = line.UnitPrice,
+            QualityStatus = QualityStatus.Approved,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.StockBatches.Add(batch);
+
+        // Log activity
+        _db.ActivityLogs.Add(new Domain.Entities.ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            OccurredAt = DateTime.UtcNow,
+            Tag = "QC",
+            Message = $"Material approved: {line.BatchNumber} (GRN line {lineId}). Approved by {req.ApprovedBy ?? "System"}."
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { approved = true, batchId = batch.Id });
+    }
+
+    [HttpPost("grns/lines/{lineId:guid}/reject")]
+    public async Task<ActionResult> RejectGrnLine(Guid lineId, [FromBody] RejectGrnLineRequest req, CancellationToken ct = default)
+    {
+        var line = await _db.GRNLineItems
+            .Include(li => li.GRN)
+            .ThenInclude(g => g.VendorPurchaseOrder)
+            .ThenInclude(po => po.Vendor)
+            .Include(li => li.MaterialVariant)
+            .FirstOrDefaultAsync(li => li.Id == lineId, ct);
+
+        if (line == null) return NotFound();
+
+        if (line.QualityStatus != QualityStatus.PendingQC)
+            return BadRequest("Line already processed.");
+
+        // Reject the line
+        line.QualityStatus = QualityStatus.Rejected;
+
+        // TODO: Generate vendor material NCR
+        // For now, just log the rejection
+        _db.ActivityLogs.Add(new Domain.Entities.ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            OccurredAt = DateTime.UtcNow,
+            Tag = "QC_REJECT",
+            Message = $"Material rejected: {line.MaterialVariant.SKU} Batch {line.BatchNumber}. Reason: {req.Reason}. Vendor: {line.GRN.VendorPurchaseOrder.Vendor.Name}. Rejected by {req.RejectedBy ?? "System"}."
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { rejected = true, ncrGenerated = false }); // TODO: Set ncrGenerated = true when NCR system is in place
+    }
 }
+
+public record GrnQcListDto(
+    Guid Id,
+    string VendorName,
+    DateTime ReceivedDate,
+    string InvoiceNumber,
+    int TotalLines,
+    int PendingLines,
+    string QcStatus);
+
+public record GrnQcDetailDto(
+    Guid Id,
+    string VendorName,
+    string InvoiceNumber,
+    DateTime ReceivedDate,
+    string QcStatus,
+    IReadOnlyList<GrnQcLineDto> Lines);
+
+public record GrnQcLineDto(
+    Guid Id,
+    string Sku,
+    string Grade,
+    string Size,
+    string Unit,
+    string BatchNumber,
+    decimal QuantityReceived,
+    decimal UnitPrice,
+    string QcStatus);
+
+public record ApproveGrnLineRequest(string? Notes, string? ApprovedBy);
+public record RejectGrnLineRequest(string Reason, string? NcrDescription, string? RejectedBy);
 
 public record VendorPoDto(Guid Id, Guid VendorId, DateTime OrderDate, string Status);
 

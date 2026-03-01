@@ -44,3 +44,30 @@ public record UpdateWorkOrderRequest(string? Stage, string? Status, string? Assi
 
 public record UserListDto(Guid Id, string Username, string Role);
 
+// Pipeline/Timeline DTOs
+public record WorkOrderPipelineDto(
+    Guid Id,
+    string OrderNumber,
+    string Status,
+    string CurrentStage,
+    DateTime CreatedAt,
+    DateTime? AcceptedAt,
+    DateTime? WorkStartedAt,
+    string? WorkStartedBy,
+    DateTime? WorkCompletedAt,
+    string? WorkCompletedBy,
+    bool IsMaterialsAssigned,
+    IReadOnlyList<WorkOrderStageTimelineDto> StageTimeline,
+    IReadOnlyList<WorkOrderLineItemDto> LineItems);
+
+public record WorkOrderStageTimelineDto(
+    string StageName,
+    int StageOrder,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    string Status); // "Not Started", "In Progress", "Completed"
+
+public record StartWorkOrderRequest(Guid WorkOrderId);
+
+public record UpdateWorkOrderStatusRequest(Guid WorkOrderId, string Stage);
+

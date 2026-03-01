@@ -99,6 +99,9 @@
                                                         <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-600/15 border border-emerald-500/20 text-emerald-300">
                                                             Accepted
                                                         </span>
+                                                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#195de6]/15 border border-[#195de6]/30 text-[#195de6]">
+                                                            Stage: @wo.Stage
+                                                        </span>
                                                     }
                                                     else
                                                     {
@@ -180,6 +183,11 @@
                                     Accepted
                                 </span>
                             }
+                            <button class="bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 py-2 px-3 text-xs font-bold rounded transition-colors"
+                                    @onclick="ShowDeleteConfirmAsync"
+                                    title="Delete Work Order">
+                                <span class="material-symbols-outlined text-sm">delete</span>
+                            </button>
                         </div>
                     </div>
 
@@ -194,6 +202,78 @@
                                 <div class="text-sm font-bold text-slate-200">@_selected.Status</div>
                             </div>
                         </div>
+
+                        @if (_selected.ProductionReceivedAt != null)
+                        {
+                            @if (_pipelineLoading)
+                            {
+                                <div class="bg-[#243047]/20 border border-[#344465] p-4">
+                                    <div class="text-xs text-slate-400">Loading pipeline details...</div>
+                                </div>
+                            }
+                            else if (_selectedPipeline != null)
+                            {
+                                <div class="bg-[#243047]/20 border border-[#344465] p-4">
+                                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-3">Production Progress</div>
+                                    <div class="space-y-2">
+                                        @if (_selectedPipeline.WorkStartedAt.HasValue)
+                                        {
+                                            <div class="flex items-center gap-2 text-emerald-400">
+                                                <span class="material-symbols-outlined text-sm">check_circle</span>
+                                                <span class="text-xs font-semibold">Work in Progress</span>
+                                                <span class="text-[10px] text-slate-400">Started @_selectedPipeline.WorkStartedAt.Value.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                                            </div>
+                                        }
+                                        else if (_selectedPipeline.IsMaterialsAssigned)
+                                        {
+                                            <div class="flex items-center gap-2 text-amber-400">
+                                                <span class="material-symbols-outlined text-sm">inventory_2</span>
+                                                <span class="text-xs font-semibold">Materials Allocated - Ready to Start</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="flex items-center gap-2 text-amber-300">
+                                                <span class="material-symbols-outlined text-sm">pending</span>
+                                                <span class="text-xs font-semibold">Awaiting Materials Allocation</span>
+                                            </div>
+                                        }
+                                    </div>
+                                    
+                                    <div class="mt-3 pt-3 border-t border-[#344465]">
+                                        <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Stage Timeline</div>
+                                        <div class="space-y-1">
+                                            @foreach (var stageItem in _selectedPipeline.StageTimeline)
+                                            {
+                                                var statusColor = stageItem.Status switch
+                                                {
+                                                    "Completed" => "text-emerald-300 bg-emerald-500/10 border-emerald-500/20",
+                                                    "In Progress" => "text-[#195de6] bg-[#195de6]/10 border-[#195de6]/30",
+                                                    _ => "text-slate-400 bg-slate-500/5 border-slate-500/10"
+                                                };
+                                                
+                                                <div class="flex items-center gap-2 px-2 py-1 rounded border @statusColor text-xs">
+                                                    @if (stageItem.Status == "Completed")
+                                                    {
+                                                        <span class="material-symbols-outlined text-xs">check_circle</span>
+                                                    }
+                                                    else if (stageItem.Status == "In Progress")
+                                                    {
+                                                        <span class="material-symbols-outlined text-xs">schedule</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="material-symbols-outlined text-xs">pending</span>
+                                                    }
+                                                    <span class="font-semibold">@stageItem.StageName</span>
+                                                    <span>(@stageItem.Status)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        }
 
                         <div class="bg-[#243047]/20 border border-[#344465] p-3">
                             <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Line Items</div>
@@ -408,6 +488,39 @@
     </div>
 }
 
+<!-- Delete Confirmation Modal -->
+@if (_showDeleteConfirmation)
+{
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-[#1a2233] border border-[#344465] rounded-lg max-w-sm w-full shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-start gap-4 mb-4">
+                    <span class="material-symbols-outlined text-rose-400 text-2xl shrink-0">warning</span>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-200 mb-1">Delete Work Order?</h3>
+                        <p class="text-sm text-slate-400">This action cannot be undone.</p>
+                    </div>
+                </div>
+                <div class="bg-[#243047]/30 border border-rose-500/20 rounded p-3 mb-4">
+                    <p class="text-xs text-slate-300"><span class="font-semibold">Order:</span> @_deleteConfirmOrderNumber</p>
+                    <p class="text-xs text-slate-400 mt-1">Permanently delete this work order and all associated data?</p>
+                </div>
+            </div>
+            <div class="flex gap-2 p-4 border-t border-[#344465] bg-[#111621]/50">
+                <button @onclick="CancelDelete"
+                        class="flex-1 px-4 py-2 bg-[#243047] hover:bg-[#344465] text-slate-200 text-xs font-bold rounded transition-colors">
+                    Cancel
+                </button>
+                <button @onclick="ConfirmDeleteAsync"
+                        disabled="@_deletingWorkOrder"
+                        class="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors">
+                    @if (_deletingWorkOrder) { <span>Deleting...</span> } else { <span>Delete</span> }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private enum InboxFilter { New, Accepted, All }
 
@@ -426,6 +539,8 @@
 
     private Guid? _selectedId;
     private WorkOrderCardDto? _selected;
+    private WorkOrderPipelineDto? _selectedPipeline;
+    private bool _pipelineLoading;
 
     private bool _accepting;
     private bool _acceptSuccess;
@@ -444,6 +559,11 @@
     private bool _srsLoading;
     private string? _srsError;
     private List<SrsListDto> _srsForSelectedWo = [];
+
+    private bool _showDeleteConfirmation = false;
+    private string? _deleteConfirmOrderNumber;
+    private Guid _deleteConfirmWorkOrderId;
+    private bool _deletingWorkOrder = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -520,14 +640,29 @@
         StateHasChanged();
     }
 
-    private void Select(Guid id)
+    private async Task SelectAsync(Guid id)
     {
         _selectedId = id;
         _selected = _all.FirstOrDefault(x => x.Id == id);
         _acceptSuccess = false;
         _acceptError = null;
+        _selectedPipeline = null;
+        
+        if (_selected?.ProductionReceivedAt != null)
+        {
+            _pipelineLoading = true;
+            StateHasChanged();
+            _selectedPipeline = await Api.GetWorkOrderPipelineAsync(Auth.BaseUrl, id);
+            _pipelineLoading = false;
+        }
+        
         _ = LoadSrsForSelectedWoAsync();
         StateHasChanged();
+    }
+
+    private void Select(Guid id)
+    {
+        _ = SelectAsync(id);
     }
 
     private async Task ReloadSrsAsync()
@@ -568,18 +703,43 @@
         _acceptError = null;
         StateHasChanged();
 
-        var (ok, err) = await Api.ReceiveWorkOrderByProductionAsync(Auth.BaseUrl, _selected.Id, Auth.CurrentUser?.Username);
-        _accepting = false;
-
-        if (!ok)
+        try
         {
-            _acceptError = err ?? "Failed to accept work order.";
-            StateHasChanged();
-            return;
-        }
+            // Step 1: Ensure work order is sent to production first
+            var (sendOk, sendErr) = await Api.SendToProductionAsync(Auth.BaseUrl, _selected.Id, Auth.CurrentUser?.Username);
+            if (!sendOk && !sendErr?.Contains("already") == true)
+            {
+                _acceptError = sendErr ?? "Failed to send to production.";
+                StateHasChanged();
+                return;
+            }
 
-        _acceptSuccess = true;
-        await LoadAsync();
+            // Step 2: Now receive it by production
+            var (ok, err) = await Api.ReceiveWorkOrderByProductionAsync(Auth.BaseUrl, _selected.Id, Auth.CurrentUser?.Username);
+            _accepting = false;
+
+            if (!ok)
+            {
+                _acceptError = err ?? "Failed to accept work order.";
+                StateHasChanged();
+                return;
+            }
+
+            _acceptSuccess = true;
+            await LoadAsync();
+            
+            // Reload pipeline data after accept since the order now has ProductionReceivedAt set
+            if (_selectedId.HasValue)
+            {
+                _selectedPipeline = null;
+                await SelectAsync(_selectedId.Value);
+            }
+        }
+        finally
+        {
+            _accepting = false;
+            StateHasChanged();
+        }
     }
 
     private void OpenMaterialCheck()
@@ -694,6 +854,19 @@
 
             _materialSuccess = $"SRS created: SRS-{srs.Id.ToString()[..8]} (Status: {srs.Status}). Store Manager can approve from SRS tab.";
             _selectedQty.Clear();
+            
+            // Auto-send to production pipeline
+            var (ok, sendErr) = await Api.SendToProductionAsync(Auth.BaseUrl, _selected.Id, Auth.CurrentUser?.Username);
+            if (ok)
+            {
+                _materialSuccess += " Sent to production pipeline.";
+            }
+            else if (!string.IsNullOrEmpty(sendErr) && !sendErr.Contains("already"))
+            {
+                _materialError = sendErr ?? "Failed to send to production.";
+                return;
+            }
+            
             await LoadSrsForSelectedWoAsync();
         }
         finally
@@ -701,6 +874,46 @@
             _raisingSrs = false;
             StateHasChanged();
         }
+    }
+
+    private async Task ShowDeleteConfirmAsync()
+    {
+        if (_selected == null) return;
+        _deleteConfirmOrderNumber = _selected.OrderNumber;
+        _deleteConfirmWorkOrderId = _selected.Id;
+        _showDeleteConfirmation = true;
+        StateHasChanged();
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteConfirmation = false;
+        _deleteConfirmOrderNumber = null;
+        _deleteConfirmWorkOrderId = Guid.Empty;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        _deletingWorkOrder = true;
+        StateHasChanged();
+
+        var (ok, error) = await Api.DeleteWorkOrderAsync(Auth.BaseUrl, _deleteConfirmWorkOrderId);
+        _deletingWorkOrder = false;
+
+        if (!ok)
+        {
+            _listError = error ?? "Failed to delete work order.";
+            _showDeleteConfirmation = false;
+            StateHasChanged();
+            return;
+        }
+
+        _showDeleteConfirmation = false;
+        _selectedId = null;
+        _selected = null;
+        await LoadAsync();
+        StateHasChanged();
     }
 }
 

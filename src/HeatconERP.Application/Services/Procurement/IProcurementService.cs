@@ -15,8 +15,11 @@ public interface IProcurementService
     // New store procurement flow (SRS shortage -> Vendor PO -> Vendor Invoice -> GRN draft -> submit)
     Task<VendorPurchaseOrder> CreateVendorPoFromSrsAsync(Guid srsId, Guid vendorId, CancellationToken ct = default);
     Task<VendorPurchaseInvoice> SendVendorPoAndCreateInvoiceAsync(Guid vendorPurchaseOrderId, string? invoiceNumber, DateTime invoiceDate, CancellationToken ct = default);
-    Task<GRN> AcceptVendorInvoiceAndCreateGrnDraftAsync(Guid vendorPurchaseInvoiceId, CancellationToken ct = default);
+    Task<GRN> AcceptVendorInvoiceAndCreateGrnDraftAsync(Guid vendorPurchaseInvoiceId, string description, string? decidedBy, CancellationToken ct = default);
+    Task RejectVendorInvoiceAsync(Guid vendorPurchaseInvoiceId, string description, string? decidedBy, CancellationToken ct = default);
+    Task<IReadOnlyList<VendorInvoiceQcDecision>> GetVendorInvoiceDeclineHistoryAsync(Guid vendorPurchaseInvoiceId, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> SubmitGrnDraftAsync(Guid grnId, string? invoiceNumber, DateTime? receivedDate, IReadOnlyList<SubmitGrnDraftLine> lines, CancellationToken ct = default);
+    Task<bool> CheckGrnQcAllApprovedAsync(Guid grnId, CancellationToken ct = default);
 }
 
 public record CreateVendorPoLine(Guid MaterialVariantId, decimal OrderedQuantity, decimal UnitPrice);

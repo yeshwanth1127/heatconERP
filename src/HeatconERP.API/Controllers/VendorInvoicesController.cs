@@ -113,11 +113,12 @@ public class VendorInvoicesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/accept")]
-    public async Task<ActionResult<VendorInvoiceAcceptedDto>> Accept(Guid id, CancellationToken ct)
+    public async Task<ActionResult<VendorInvoiceAcceptedDto>> Accept(Guid id, [FromBody] VendorInvoiceQcDecisionRequest req, CancellationToken ct)
     {
         try
         {
-            var grn = await _procurement.AcceptVendorInvoiceAndCreateGrnDraftAsync(id, ct);
+            await EnsureVendorInvoiceQcDecisionStoreAsync(ct);
+            var grn = await _procurement.AcceptVendorInvoiceAndCreateGrnDraftAsync(id, req.Description, req.DecidedBy, ct);
             return Ok(new VendorInvoiceAcceptedDto(id, grn.Id));
         }
         catch (DbUpdateConcurrencyException)
@@ -128,6 +129,84 @@ public class VendorInvoicesController : ControllerBase
         {
             return BadRequest(ex.Message);
         }
+    }
+
+    [HttpPost("{id:guid}/decline")]
+    public async Task<ActionResult> Decline(Guid id, [FromBody] VendorInvoiceQcDecisionRequest req, CancellationToken ct)
+    {
+        try
+        {
+            await EnsureVendorInvoiceQcDecisionStoreAsync(ct);
+            await _procurement.RejectVendorInvoiceAsync(id, req.Description, req.DecidedBy, ct);
+            return NoContent();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict("Concurrency conflict. Refresh and retry.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("{id:guid}/qc-decline-history")]
+    public async Task<ActionResult<IReadOnlyList<VendorInvoiceQcHistoryDto>>> GetQcDeclineHistory(Guid id, CancellationToken ct)
+    {
+        await EnsureVendorInvoiceQcDecisionStoreAsync(ct);
+
+        var exists = await _db.VendorPurchaseInvoices.AsNoTracking().AnyAsync(x => x.Id == id, ct);
+        if (!exists) return NotFound("Vendor invoice not found.");
+
+        var items = await _procurement.GetVendorInvoiceDeclineHistoryAsync(id, ct);
+        return Ok(items.Select(x => new VendorInvoiceQcHistoryDto(x.Id, x.Decision, x.Description, x.DecidedBy, x.CreatedAt)).ToList());
+    }
+
+    [HttpGet("{id:guid}/grn-qc-status")]
+    public async Task<ActionResult<GrnQcStatusDto>> GetGrnQcStatus(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var grn = await _db.GRNs.AsNoTracking()
+                .Include(g => g.LineItems)
+                .FirstOrDefaultAsync(g => g.VendorPurchaseInvoiceId == id, ct);
+            if (grn == null) return NotFound("GRN not found for this invoice.");
+
+            var allApproved = await _procurement.CheckGrnQcAllApprovedAsync(grn.Id, ct);
+            var pendingCount = grn.LineItems.Count(li => li.QualityStatus.ToString() == QualityStatus.PendingQC.ToString());
+            var approvedCount = grn.LineItems.Count(li => li.QualityStatus.ToString() == QualityStatus.Approved.ToString());
+            var rejectedCount = grn.LineItems.Count(li => li.QualityStatus.ToString() == QualityStatus.Rejected.ToString());
+
+            return Ok(new GrnQcStatusDto(grn.Id, allApproved, pendingCount, approvedCount, rejectedCount));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.Message);
+        }
+    }
+
+    private async Task EnsureVendorInvoiceQcDecisionStoreAsync(CancellationToken ct)
+    {
+        const string sql = """
+CREATE TABLE IF NOT EXISTS "VendorInvoiceQcDecisions" (
+    "Id" uuid NOT NULL,
+    "VendorPurchaseInvoiceId" uuid NOT NULL,
+    "Decision" text NOT NULL,
+    "Description" text NOT NULL,
+    "DecidedBy" text NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL,
+    "UpdatedAt" timestamp with time zone NULL,
+    "IsDeleted" boolean NOT NULL,
+    "RowVersion" bytea NOT NULL,
+    CONSTRAINT "PK_VendorInvoiceQcDecisions" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_VendorInvoiceQcDecisions_VendorPurchaseInvoices_VendorPurchaseInvoiceId"
+        FOREIGN KEY ("VendorPurchaseInvoiceId") REFERENCES "VendorPurchaseInvoices" ("Id") ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS "IX_VendorInvoiceQcDecisions_VendorPurchaseInvoiceId_CreatedAt"
+    ON "VendorInvoiceQcDecisions" ("VendorPurchaseInvoiceId", "CreatedAt");
+""";
+
+        await _db.Database.ExecuteSqlRawAsync(sql, ct);
     }
 }
 
@@ -160,4 +239,9 @@ public record VendorInvoiceCreatedDto(Guid Id, Guid VendorPurchaseOrderId, strin
 
 public record VendorInvoiceAcceptedDto(Guid VendorPurchaseInvoiceId, Guid GrnId);
 
+public record GrnQcStatusDto(Guid GrnId, bool AllApproved, int PendingCount, int ApprovedCount, int RejectedCount);
+
+public record VendorInvoiceQcDecisionRequest(string Description, string? DecidedBy);
+
+public record VendorInvoiceQcHistoryDto(Guid Id, string Decision, string Description, string DecidedBy, DateTime CreatedAt);
 

@@ -9,7 +9,10 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddHttpClient<ApiClient>(client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(10);
+    // Converting an enquiry to a quotation can involve DB work and may exceed 10s on larger datasets.
+    // Make timeout configurable (env var/appsettings key: HTTP_TIMEOUT_SECONDS). Defaults to 60s.
+    var timeoutSeconds = builder.Configuration.GetValue<int?>("HTTP_TIMEOUT_SECONDS") ?? 60;
+    client.Timeout = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 5, 600));
 });
 builder.Services.AddScoped<AuthService>();
 

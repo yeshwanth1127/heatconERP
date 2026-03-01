@@ -1,0 +1,383 @@
+@page "/incoming-material-qc"
+@using HeatconERP.Web.Services
+@using HeatconERP.Web.Models
+@inject AuthService Auth
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Incoming Material QC - HeatconERP</PageTitle>
+
+<div class="bg-[#1a2233] border border-[#344465] px-6 py-3 flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-white leading-none">Incoming Material QC</h1>
+        <span class="bg-[#195de6]/20 text-[#195de6] text-[10px] font-bold px-2 py-0.5 rounded tracking-widest uppercase">Quality Control</span>
+    </div>
+    <button class="bg-[#243047] hover:bg-[#344465] border border-[#344465] text-slate-300 py-1.5 px-4 text-xs font-bold rounded flex items-center gap-2" @onclick="LoadAsync">
+        <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+    </button>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <section class="lg:col-span-4 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between">
+            <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm text-[#195de6]">inventory</span>
+                Pending QC Inspections
+            </div>
+            <div class="text-[11px] text-slate-500">@_pendingGrns.Count</div>
+        </div>
+        <div class="p-4 border-b border-[#344465] bg-[#111621]/50">
+            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500">Search</label>
+            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" placeholder="GRN / Vendor" @bind="_search" @bind:after="ApplyFilter" />
+        </div>
+        <div class="flex-1 overflow-auto industrial-scrollbar min-h-0">
+            @if (_loading)
+            {
+                <div class="p-8 text-slate-400 text-center">Loading...</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(_listError))
+            {
+                <div class="p-4 text-rose-300 text-xs border-b border-[#344465] bg-rose-900/10">@_listError</div>
+            }
+            else if (_filtered.Count == 0)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">No pending QC inspections.</div>
+            }
+            else
+            {
+                <div class="p-4 space-y-3">
+                    @foreach (var grn in _filtered)
+                    {
+                        var selected = _selectedGrnId == grn.Id;
+                        var statusColor = grn.QcStatus switch
+                        {
+                            "Pending" => "bg-amber-600/15 text-amber-300 border-amber-500/20",
+                            "Approved" => "bg-emerald-600/15 text-emerald-300 border-emerald-500/20",
+                            "Rejected" => "bg-rose-600/15 text-rose-300 border-rose-500/20",
+                            _ => "bg-slate-600/15 text-slate-300 border-slate-500/20"
+                        };
+                        
+                        <button type="button"
+                                class="w-full text-left rounded-xl p-4 border transition-all backdrop-blur-md bg-white/5 hover:bg-white/10 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.75)] @(selected ? "border-[#195de6]/70 ring-1 ring-[#195de6]/30" : "border-white/10 hover:border-white/20")"
+                                @onclick="@(() => SelectAsync(grn.Id))">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm font-bold text-[#195de6] truncate">GRN-@grn.Id.ToString().Substring(0, 8)</div>
+                                    <div class="text-[11px] text-slate-500 mt-1">@grn.VendorName</div>
+                                    <div class="text-[11px] text-slate-400 mt-1">@grn.ReceivedDate.ToLocalTime().ToString("dd MMM yyyy")</div>
+                                </div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold @statusColor border">@grn.QcStatus</span>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <aside class="lg:col-span-8 bg-[#111621] border border-[#344465] overflow-hidden flex flex-col min-h-[60vh]">
+        <div class="p-4 border-b border-[#344465] bg-[#243047]/30 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[#195de6]">fact_check</span>
+                    QC Inspection Detail
+                </div>
+                @if (_selectedGrn != null)
+                {
+                    <div class="text-[11px] text-slate-400 mt-1">
+                        GRN: <span class="text-slate-200 font-semibold">GRN-@_selectedGrn.Id.ToString().Substring(0, 8)</span> · Status: <span class="text-slate-200 font-semibold">@_selectedGrn.QcStatus</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-auto industrial-scrollbar p-4">
+            @if (!string.IsNullOrWhiteSpace(_detailError))
+            {
+                <div class="p-3 border border-rose-500/20 bg-rose-900/15 text-rose-300 text-xs mb-4">@_detailError</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_actionSuccess))
+            {
+                <div class="p-3 border border-emerald-500/20 bg-emerald-900/10 text-emerald-300 text-xs mb-4">@_actionSuccess</div>
+            }
+
+            @if (_selectedGrn == null)
+            {
+                <div class="p-10 text-center text-slate-500 text-sm">Select a GRN to inspect materials.</div>
+            }
+            else
+            {
+                <div class="mb-4 bg-[#243047]/20 border border-[#344465] p-4">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-3">GRN Information</div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div>
+                            <div class="text-[10px] uppercase text-slate-500">Vendor</div>
+                            <div class="text-slate-200 font-semibold">@_selectedGrn.VendorName</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase text-slate-500">Invoice</div>
+                            <div class="text-slate-200 font-semibold">@_selectedGrn.InvoiceNumber</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase text-slate-500">Received Date</div>
+                            <div class="text-slate-200 font-semibold">@_selectedGrn.ReceivedDate.ToLocalTime().ToString("dd MMM yyyy")</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] uppercase text-slate-500">Lines</div>
+                            <div class="text-slate-200 font-semibold">@_selectedGrn.Lines.Count</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4 bg-[#243047]/10 border border-[#344465] p-4">
+                    <div class="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-3">Material Lines</div>
+                    <div class="space-y-3">
+                        @foreach (var line in _selectedGrn.Lines)
+                        {
+                            var qcStatus = line.QcStatus ?? "Pending";
+                            var statusColor = qcStatus switch
+                            {
+                                "Approved" => "bg-emerald-600/15 text-emerald-300 border-emerald-500/20",
+                                "Rejected" => "bg-rose-600/15 text-rose-300 border-rose-500/20",
+                                _ => "bg-amber-600/15 text-amber-300 border-amber-500/20"
+                            };
+                            
+                            <div class="border border-[#344465] bg-[#111621]/40 p-3">
+                                <div class="flex items-start justify-between gap-3 mb-2">
+                                    <div>
+                                        <div class="text-xs font-bold text-[#195de6]">@line.Sku</div>
+                                        <div class="text-[11px] text-slate-400 mt-1">Batch: @line.BatchNumber · Qty: @line.QuantityReceived @line.Unit</div>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold @statusColor border">@qcStatus</span>
+                                </div>
+                                
+                                @if (qcStatus == "Pending")
+                                {
+                                    <div class="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3">
+                                        <div class="md:col-span-9">
+                                            <label class="text-[10px] uppercase tracking-wider font-bold text-slate-500 block mb-1">QC Notes</label>
+                                            <input class="w-full bg-[#243047] border border-[#344465] rounded text-xs py-2 px-2 text-slate-200" 
+                                                   placeholder="Enter inspection notes..." 
+                                                   @bind="_qcNotes" />
+                                        </div>
+                                        <div class="md:col-span-3 flex items-end gap-2">
+                                            <button class="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded"
+                                                    @onclick="@(() => ApproveLineAsync(line.Id))"
+                                                    disabled="@_saving">
+                                                Approve
+                                            </button>
+                                            <button class="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded"
+                                                    @onclick="@(() => RejectLineAsync(line.Id))"
+                                                    disabled="@_saving">
+                                                Reject
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                                else if (qcStatus == "Approved")
+                                {
+                                    <div class="text-[11px] text-emerald-300 mt-2">✓ Approved and added to inventory</div>
+                                }
+                                else if (qcStatus == "Rejected")
+                                {
+                                    <div class="text-[11px] text-rose-300 mt-2">✗ Rejected - NCR generated</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (_selectedGrn.Lines.All(l => l.QcStatus != null && l.QcStatus != "Pending"))
+                {
+                    <div class="bg-emerald-900/10 border border-emerald-500/20 p-4 text-emerald-300 text-sm">
+                        <span class="material-symbols-outlined text-sm">check_circle</span> All lines inspected. GRN processing complete.
+                    </div>
+                }
+            }
+        </div>
+    </aside>
+</div>
+
+@code {
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "grnId")]
+    public Guid? GrnId { get; set; }
+
+    private bool _loading = true;
+    private string? _listError;
+    private string _search = "";
+    
+    private List<GrnQcListDto> _pendingGrns = [];
+    private List<GrnQcListDto> _filtered = [];
+    
+    private Guid? _selectedGrnId;
+    private GrnQcDetailDto? _selectedGrn;
+    
+    private string? _detailError;
+    private string? _actionSuccess;
+    private bool _saving;
+    private string _qcNotes = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // If grnId is provided in query, pre-select it
+        if (GrnId.HasValue && GrnId.Value != Guid.Empty)
+            _selectedGrnId = GrnId.Value;
+        
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _listError = null;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        _pendingGrns = (await Api.GetPendingQcGrnsAsync(Auth.BaseUrl, 200))?.ToList() ?? [];
+        ApplyFilter();
+
+        _loading = false;
+        StateHasChanged();
+
+        if (_selectedGrnId.HasValue) 
+            await SelectAsync(_selectedGrnId.Value);
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            _filtered = _pendingGrns;
+            return;
+        }
+        var s = _search.Trim().ToLower();
+        _filtered = _pendingGrns.Where(x => 
+            x.VendorName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+            x.Id.ToString().Contains(s)).ToList();
+    }
+
+    private async Task SelectAsync(Guid id)
+    {
+        _selectedGrnId = id;
+        _detailError = null;
+        _actionSuccess = null;
+        _selectedGrn = null;
+        _qcNotes = "";
+
+        _selectedGrn = await Api.GetGrnQcDetailAsync(Auth.BaseUrl, id);
+        if (_selectedGrn == null)
+        {
+            _detailError = "Failed to load GRN details.";
+        }
+        else
+        {
+            // Update the GRN status based on line states
+            UpdateGrnQcStatus();
+        }
+
+        StateHasChanged();
+    }
+
+    private void UpdateGrnQcStatus()
+    {
+        if (_selectedGrn == null || _selectedGrn.Lines.Count == 0)
+            return;
+
+        // Check if all lines have been processed (not Pending)
+        if (_selectedGrn.Lines.All(l => l.QcStatus != null && l.QcStatus != "Pending"))
+        {
+            _selectedGrn = _selectedGrn with { QcStatus = "Complete" };
+        }
+    }
+
+    private async Task ApproveLineAsync(Guid lineId)
+    {
+        if (!_selectedGrnId.HasValue) return;
+        _saving = true;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        try
+        {
+            var (ok, batchId, err) = await Api.ApproveGrnLineAsync(Auth.BaseUrl, lineId, _qcNotes, Auth.CurrentUser?.Username);
+            if (!ok)
+            {
+                _detailError = err ?? "Failed to approve material.";
+                return;
+            }
+            
+            _actionSuccess = $"Material approved and added to inventory (Batch ID: {batchId?.ToString()[..8]}).";
+            _qcNotes = "";
+            
+            // Reload the current GRN details to get updated status
+            _selectedGrn = await Api.GetGrnQcDetailAsync(Auth.BaseUrl, _selectedGrnId.Value);
+            if (_selectedGrn != null)
+            {
+                UpdateGrnQcStatus();
+            }
+            
+            // Reload the full list to update pending count
+            await LoadAsync();
+            
+            // Re-select to update the UI
+            if (_selectedGrnId.HasValue && _selectedGrn != null)
+            {
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectLineAsync(Guid lineId)
+    {
+        if (!_selectedGrnId.HasValue) return;
+        _saving = true;
+        _detailError = null;
+        _actionSuccess = null;
+        StateHasChanged();
+
+        try
+        {
+            var reason = string.IsNullOrWhiteSpace(_qcNotes) ? "Material quality does not meet specifications" : _qcNotes;
+            var (ok, err) = await Api.RejectGrnLineAsync(Auth.BaseUrl, lineId, reason, null, Auth.CurrentUser?.Username);
+            if (!ok)
+            {
+                _detailError = err ?? "Failed to reject material.";
+                return;
+            }
+            
+            _actionSuccess = "Material rejected. Vendor has been notified.";
+            _qcNotes = "";
+            
+            // Reload the current GRN details to get updated status
+            _selectedGrn = await Api.GetGrnQcDetailAsync(Auth.BaseUrl, _selectedGrnId.Value);
+            if (_selectedGrn != null)
+            {
+                UpdateGrnQcStatus();
+            }
+            
+            // Reload the full list to update pending count
+            await LoadAsync();
+            
+            // Re-select to update the UI
+            if (_selectedGrnId.HasValue && _selectedGrn != null)
+            {
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
+}
+
+// Temporary DTOs - these should be added to Models
+public record ApproveGrnLineResult(bool Approved, Guid? BatchId);

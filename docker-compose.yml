@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: heatconerp-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+      POSTGRES_DB: ${DB_NAME:-heatconerp}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/create_db.sql:/docker-entrypoint-initdb.d/01-create_db.sql
+    networks:
+      - heatconerp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # .NET API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: heatconerp-api
+    environment:
+      DATABASE_URL: Host=postgres;Port=5432;Database=${DB_NAME:-heatconerp};Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-your_secure_password}
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5212
+    ports:
+      - "${API_PORT:-5212}:5212"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - heatconerp-network
+    restart: unless-stopped
+
+  # Blazor Web App
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: heatconerp-web
+    environment:
+      ApiBaseUrl: http://api:5212
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5118
+    ports:
+      - "${WEB_PORT:-5118}:5118"
+    depends_on:
+      - api
+    networks:
+      - heatconerp-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  heatconerp-network:
+    driver: bridge
